@@ -574,7 +574,14 @@ def main(argv: list[str] | None = None) -> int:
         names = build_name_map(analysis)
         show_analysis(analysis)
 
+        # Saved here rather than after the run, so that a rejected or a
+        # verify-only protocol still leaves the evidence behind. An
+        # analysis the operator cannot re-read is an analysis they have
+        # to run again to talk about.
+        saved = controller.save_artifact("analysis.json", analysis)
+
         if analysis.get("errors"):
+            print(f"\n  analysis written to {saved}")
             print("\nStopping here. Fix the protocol and run again.")
             return 1
 
@@ -583,6 +590,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.verify_only:
             print_banner("Done: verified, nothing was run")
+            print(f"  analysis written to {saved}")
             return 0
 
         if controller.requires_confirmation:
@@ -600,7 +608,10 @@ def main(argv: list[str] | None = None) -> int:
         show_summary(controller, final)
 
         controller.save_artifact("run.json", final)
-        controller.save_artifact("analysis.json", analysis)
+        controller.save_artifact(
+            "commands.json",
+            controller.get_commands(page_length=command_page_length),
+        )
         print(f"\n  records written to {controller.artifact_dir}")
 
         return 0 if final.get("status") == "succeeded" else 1

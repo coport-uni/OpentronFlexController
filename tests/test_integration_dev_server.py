@@ -541,3 +541,62 @@ def test_unknown_run_id_fails_without_retrying(controller):
         controller.get_run("00000000-0000-0000-0000-000000000000")
 
     assert caught.value.status_code == 404
+
+
+# ---- Operator console -------------------------------------------------
+
+
+def test_console_saves_the_analysis_when_only_verifying(tmp_path):
+    """The console leaves its evidence behind without running anything.
+
+    Saving only after a run meant that ``--verify-only``, and every
+    rejected protocol, wrote nothing at all -- so the one command an
+    operator runs to inspect a protocol was the one that kept no record.
+    """
+    import main
+
+    status = main.main(
+        [
+            "--profile",
+            "dev",
+            "--verify-only",
+            "--no-plan",
+            "--csv",
+            str(small_csv),
+            "--deck",
+            str(deck_path),
+            "--artifact-dir",
+            str(tmp_path),
+        ]
+    )
+
+    saved = tmp_path / "analysis.json"
+    assert status == 0
+    assert saved.is_file()
+    assert json.loads(saved.read_text(encoding="utf-8"))["result"] == "ok"
+
+
+def test_console_saves_the_analysis_of_a_rejected_protocol(tmp_path):
+    """A rejection is the case most worth keeping a record of."""
+    import main
+
+    status = main.main(
+        [
+            "--profile",
+            "dev",
+            "--no-plan",
+            "--csv",
+            "",
+            "--deck",
+            str(deck_path),
+            "--protocol",
+            str(fault_dir / "bad_labware.py"),
+            "--artifact-dir",
+            str(tmp_path),
+        ]
+    )
+
+    saved = tmp_path / "analysis.json"
+    assert status == 1
+    assert saved.is_file()
+    assert json.loads(saved.read_text(encoding="utf-8"))["errors"]

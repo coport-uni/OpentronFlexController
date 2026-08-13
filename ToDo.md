@@ -214,3 +214,49 @@ and watch the program execute step by step.
   but it is a deviation and is recorded as one.
 - **`protocols/hello_flex.py` added** as a minimal example, to make it
   plain that what reaches the robot is an ordinary Python file.
+
+---
+
+## Task 4: Fidelity check — simulator vs real Flex, log vs published procedure
+
+**Date**: 2026-08-13
+**GitHub Issue**: #4 (continued)
+**Asked**: is the development server identical to an Opentrons Flex, and
+does the run log match the procedure published with the protocol?
+
+### Checklist
+
+- [x] Compare development server and real device: config, versions,
+      calibration, timing
+- [x] Test empirically whether the simulator enforces physical reality
+- [x] Fetch the published procedure from the Protocol Library API
+- [x] Fetch the official example CSV linked in that description
+- [x] Compare the observed command log against the published procedure
+- [x] Reconcile the command counts arithmetically against the CSV
+- [x] Vendor the official CSV as `data/od_normalization_reference.csv`
+- [x] Fix: `--verify-only` wrote no artifact despite `--artifact-dir`
+- [x] Add regression tests for artifact saving
+
+### Outcome notes
+
+- **The development server is not a Flex.** It shares the codebase, the
+  API, the port, and the analysis engine, so it validates protocol
+  logic. It does not model physics. Proven: a protocol that aspirates
+  200 uL from a reservoir holding nothing and dispenses 1200 uL into a
+  360 uL well completed `succeeded` with zero errors. `robot_serial` is
+  `simulator`, `fw_version` is `0`, and every calibration offset is a
+  fabricated 0.0.
+- **The log matches the published procedure in sequence**: three modules
+  loaded, diluent phase, DNA phase, tiprack switch by gripper when the
+  first rack empties. Counts reconcile exactly — 348 aspirates and 104
+  tip pickups predicted from the official CSV, 348 and 104 observed.
+- **Three documented discrepancies.** The description says the protocol
+  "requires implementation of" three modules, but zero module action
+  commands are planned; they are loaded and left idle. Spec §2.4's CSV
+  header differs from the official file's. The official CSV is 103 rows,
+  above the 96 needed to exercise the gripper, which is why spec §2.4's
+  3-row starter never reaches that path.
+- **Defect found and fixed.** `--verify-only` saved nothing even when
+  `--artifact-dir` was given, so the one command an operator runs to
+  inspect a protocol kept no record. The analysis is now saved as soon
+  as it completes, including for a rejected protocol.
