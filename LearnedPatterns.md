@@ -127,6 +127,19 @@ than rediscovered. Format and categories follow CLAUDE.md §10.
 
 ---
 
+**Carrying an error detail is not the same as showing it**
+- **Problem**: A protocol with a syntax error was reported to the
+  operator as `TransportError: POST /protocols returned 422` and nothing
+  else, even though the robot had named the file and the line.
+- **Cause**: `TransportError` stored the response body on the exception,
+  but the CLI handler printed only `str(error)`, so the useful half of
+  the report never reached the terminal.
+- **Fix**: `_describe_failure` unpacks `TransportError.body` and
+  `AnalysisError.errors`, and the CLI prints each line under the summary.
+- **Rule**: Always check what the operator actually sees; an error the
+  code holds but never prints is an error the operator does not have.
+  (from ToDo#1 E)
+
 ## §5. Environment Specifics
 
 **robot-server needs libsystemd headers before `make setup`**

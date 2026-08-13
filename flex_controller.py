@@ -1027,6 +1027,43 @@ class FlexController:
         logger.info(json.dumps({"event": event, **fields}, default=str))
 
 
+def _describe_failure(error: FlexError) -> list[str]:
+    """Return the robot's own explanation of a failure, line by line.
+
+    The exception message names the request that failed; the robot's
+    reason for refusing it travels separately, on
+    :attr:`TransportError.body` or :attr:`AnalysisError.errors`. An
+    operator needs the reason -- the file and line of a syntax error,
+    the labware that could not be resolved -- so the CLI prints both.
+
+    Args:
+        error: The failure to describe.
+
+    Returns:
+        Human-readable lines, empty when the error carries no detail.
+    """
+    lines: list[str] = []
+
+    if isinstance(error, AnalysisError):
+        for entry in error.errors:
+            kind = entry.get("errorType", "Error")
+            lines.append(f"{kind}: {entry.get('detail', '')}".strip())
+        return lines
+
+    if isinstance(error, TransportError):
+        body = error.body
+        if isinstance(body, dict):
+            for entry in body.get("errors", []) or []:
+                title = entry.get("title") or entry.get("id") or "Error"
+                lines.append(f"{title}: {entry.get('detail', '')}".strip())
+            if not lines and body:
+                lines.append(json.dumps(body, default=str)[:500])
+        elif body:
+            lines.append(str(body)[:500])
+
+    return lines
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the controller from the command line.
 
@@ -1116,6 +1153,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if final.get("status") == "succeeded" else 1
     except FlexError as error:
         logger.error("%s: %s", type(error).__name__, error)
+        for line in _describe_failure(error):
+            logger.error("  %s", line)
         return 1
 
 

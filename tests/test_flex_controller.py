@@ -538,3 +538,45 @@ def test_module_exposes_one_command_line_entry_point():
         "FlexController",
         "main",
     ]
+
+
+def test_transport_failure_detail_reaches_the_operator():
+    """A rejected upload is explained, not just counted.
+
+    The exception message names the request; the robot's reason -- the
+    file and line of a syntax error -- travels on the body, so the CLI
+    has to unpack it or the operator learns only that a 422 happened.
+    """
+    error = flex_controller.TransportError(
+        "POST /protocols returned 422",
+        status_code=422,
+        body={
+            "errors": [
+                {
+                    "id": "ProtocolFilesInvalid",
+                    "title": "Protocol File(s) Invalid",
+                    "detail": "expected ':' (bad_syntax.py, line 16)",
+                }
+            ]
+        },
+    )
+
+    assert flex_controller._describe_failure(error) == [
+        "Protocol File(s) Invalid: expected ':' (bad_syntax.py, line 16)"
+    ]
+
+
+def test_analysis_failure_detail_reaches_the_operator():
+    """Every analysis error is listed, not only the first."""
+    error = flex_controller.AnalysisError(
+        "analysis reported 2 error(s)",
+        errors=[
+            {"errorType": "ExceptionInProtocolError", "detail": "no labware"},
+            {"errorType": "LocationIsOccupiedError", "detail": "B2 taken"},
+        ],
+    )
+
+    assert flex_controller._describe_failure(error) == [
+        "ExceptionInProtocolError: no labware",
+        "LocationIsOccupiedError: B2 taken",
+    ]

@@ -99,3 +99,46 @@ of what was planned (CLAUDE.md §4 rule 2).
   the first is exhausted, which takes more than 96 pickups.
 - **TC-12 and TC-13 were not attempted.** No Opentrons Flex is present.
   Nothing in this task is evidence about hardware (CLAUDE.md §5.1).
+
+---
+
+## Task 2: Independent Re-verification and Operator-facing Error Detail
+
+**Date**: 2026-08-13
+**GitHub Issue**: #3
+**Spec**: `docs/flex_controller_spec_v0.3.md` (v0.3)
+
+Task 1 was verified by the session that wrote it. This task re-runs the
+verification from the outside -- driving the CLI and the class directly
+rather than through the test suite -- so the result does not rest on the
+tests agreeing with the code that produced them.
+
+### Checklist
+
+- [x] Re-run the full suite against a live development server (54 passed)
+- [x] Drive each fault protocol through the CLI and read the real output
+- [x] Confirm TC-07 evidence in a real run: 2 `moveLabware` with
+      `usingGripper`, 3 `loadModule`, 192 aspirates for 96 CSV rows,
+      97 waste-chute tip drops
+- [x] Confirm TC-10 independently: run reaches `succeeded`, 788 commands,
+      0 failed
+- [x] Confirm TC-11 independently: `play` then `stop` reaches `stopped`
+- [x] Confirm TC-09 independently: demote `cutoutD3`, observe a clean
+      analysis and a `failed` run with `AreaNotInDeckConfigurationError`
+- [x] Fix: surface the robot's own explanation in the CLI, not just the
+      status line (`_describe_failure`)
+- [x] Add unit tests for the new reporting path
+- [x] Record the lesson in `LearnedPatterns.md` §4
+
+### Outcome notes
+
+- **Defect found and fixed.** `TransportError` carried the robot's
+  explanation on `.body`, but the CLI printed only `str(error)`, so an
+  operator uploading a protocol with a syntax error saw
+  `POST /protocols returned 422` and no file or line. The CLI now prints
+  the detail beneath the summary. This was the one substantive gap the
+  original verification missed, because the tests asserted against the
+  exception object rather than against the terminal output.
+- **TC-09 remains a documented deviation from spec §7**, confirmed a
+  second time by direct observation rather than by test.
+- **TC-12 and TC-13 are still not run.** No Opentrons Flex is present.
