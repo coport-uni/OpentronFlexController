@@ -260,3 +260,53 @@ does the run log match the procedure published with the protocol?
   `--artifact-dir` was given, so the one command an operator runs to
   inspect a protocol kept no record. The analysis is now saved as soon
   as it completes, including for a rejected protocol.
+
+---
+
+## Task 5: Convention audit and documentation set
+
+**Date**: 2026-08-13
+**GitHub Issue**: #5
+**Requested**: check the code against CLAUDE.md and the MIT convention;
+organise the work and the spec departures into separate markdown files;
+rewrite README.md for a reader who has never used an Opentrons Flex,
+using diagrams and tables, stating what the simulation established and
+what was borrowed from which repository.
+
+### Checklist
+
+- [x] Run ruff check and ruff format across the repository
+- [x] Check the 80-column limit, tabs, and indentation
+- [x] Audit the rules ruff cannot see: docstrings and their Google
+      sections, verb-shaped function names, noun-shaped class names,
+      English-only source, continuation-line operator placement
+- [x] Fix every genuine finding
+- [x] Write `docs/code_quality_audit.md`
+- [x] Write `docs/spec_deviations.md`
+- [x] Write `docs/verification_report.md`
+- [x] Write `docs/upstream_references.md`
+- [x] Rewrite `README.md` for a newcomer, with diagrams and tables
+- [x] Verify every numeric claim in the new documents against a real run
+- [x] Verify every internal document link resolves
+
+### Outcome notes
+
+- **The audit tool was wrong three times before the code was.** A first,
+  regex-based version reported 94 findings; 17 were phantom operator
+  faults from matching "or" inside "error", "floor", and "operator", and
+  70 were phantom docstring faults from demanding `Args:` for pytest
+  fixtures. A token-based rewrite reported 8, of which one came from
+  skipping string literals. The final count of genuine findings was
+  **six**, all in `claude_test/`: scenario functions named for nouns
+  where CLAUDE.md §2 asks for verbs. CLAUDE.md §8 waives columns and
+  docstrings there, not naming.
+- **One documentation claim was wrong and was corrected**, not shipped:
+  the README described `hello_flex.py` as twenty lines when it is
+  thirty-four.
+- **Ten spec deviations are now catalogued** with evidence. Three are
+  errors in the spec's model of robot-server, two are ours and
+  deliberate, five are gaps or typos.
+- **A convention divergence is recorded rather than silently followed**:
+  CLAUDE.md §2 specifies `lower_case` constants, against PEP 8 and
+  against the CommonClaude table it derives from. The project file wins
+  per §1, and the code follows it.

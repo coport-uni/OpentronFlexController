@@ -41,32 +41,32 @@ def show(title, fn):
     print()
 
 
-def controller():
+def build_controller():
     c = FlexController(profile="dev", artifact_dir=root / "artifacts")
     c.set_deck_configuration(deck)
     return c
 
 
-def undefined_labware():
-    c = controller()
+def probe_undefined_labware():
+    c = build_controller()
     c.assert_analysis_clean(
         {"errors": c.verify_only(faults / "bad_labware.py")["errors"]}
     )
 
 
-def syntax_error():
-    controller().verify_only(faults / "bad_syntax.py")
+def probe_syntax_error():
+    build_controller().verify_only(faults / "bad_syntax.py")
 
 
-def layout_collision():
-    c = controller()
+def probe_layout_collision():
+    c = build_controller()
     c.assert_analysis_clean(
         {"errors": c.verify_only(faults / "bad_layout.py")["errors"]}
     )
 
 
-def missing_csv_parameter():
-    c = controller()
+def probe_missing_csv_parameter():
+    c = build_controller()
     c.upload_protocol(
         root / "protocols" / "OD_Normalization.py",
         parameter_values=params,
@@ -75,13 +75,13 @@ def missing_csv_parameter():
     c.assert_analysis_clean(c.wait_for_analysis())
 
 
-def unknown_run_id():
-    controller().get_run("00000000-0000-0000-0000-000000000000")
+def probe_unknown_run_id():
+    build_controller().get_run("00000000-0000-0000-0000-000000000000")
 
 
-def deck_fixture_missing():
+def probe_missing_deck_fixture():
     # The chute is a deck fixture, so this fault only shows at run time.
-    c = controller()
+    c = build_controller()
     broken = [e for e in deck if e["cutoutId"] != "cutoutD3"]
     broken.append(
         {"cutoutId": "cutoutD3", "cutoutFixtureId": "singleRightSlot"}
@@ -107,12 +107,12 @@ def deck_fixture_missing():
         c.set_deck_configuration(deck)
 
 
-show("1. Undefined labware load name (TC-08)", undefined_labware)
-show("2. Python syntax error", syntax_error)
-show("3. Deck layout collision, two labware in slot B2", layout_collision)
-show("4. Missing CSV runtime parameter file", missing_csv_parameter)
-show("5. Unknown run id, HTTP 4xx", unknown_run_id)
+show("1. Undefined labware load name (TC-08)", probe_undefined_labware)
+show("2. Python syntax error", probe_syntax_error)
+show("3. Deck layout collision, two labware in slot B2", probe_layout_collision)
+show("4. Missing CSV runtime parameter file", probe_missing_csv_parameter)
+show("5. Unknown run id, HTTP 4xx", probe_unknown_run_id)
 print("=" * 72)
 print("6. Deck fixture missing: cutoutD3 has no waste chute (TC-09)")
 print("=" * 72)
-deck_fixture_missing()
+probe_missing_deck_fixture()
