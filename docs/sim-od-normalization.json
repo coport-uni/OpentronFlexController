@@ -1,0 +1,37 @@
+{
+  "machine": "OT-3 Standard",
+  "strict_attached_instruments": false,
+  "attached_instruments": {
+    "left": {
+      "model": "p1000_96_3.7",
+      "id": "96ch_sim_001"
+    },
+    "gripper": {
+      "model": "gripper_1.3",
+      "id": "gripper_sim_001"
+    }
+  },
+  "attached_modules": {
+    "thermocycler": [
+      {
+        "model": "thermocyclerModuleV2",
+        "serial_number": "therm-sim-001",
+        "calls": []
+      }
+    ],
+    "tempdeck": [
+      {
+        "model": "temperatureModuleV2",
+        "serial_number": "temp-sim-001",
+        "calls": []
+      }
+    ],
+    "heatershaker": [
+      {
+        "model": "heaterShakerModuleV1",
+        "serial_number": "hs-sim-001",
+        "calls": []
+      }
+    ]
+  }
+}
