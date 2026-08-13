@@ -1,0 +1,56 @@
+{
+  "data": {
+    "id": "protocol-1",
+    "protocolType": "python",
+    "robotType": "OT-3 Standard",
+    "metadata": {
+      "protocolName": "OD-600 Normalization using 96-channel pipette",
+      "author": "Anurag Kanase <anurag.kanase@opentrons.com>",
+      "description": "OD-600 Normalization Protocol using Custom CSV File.\nThe protocol normalizes Culture plate OD taken at 600nm.\n Note: With 96-ch pipette, the tips cannot be returned to the tiprack."
+    },
+    "analysisSummaries": [
+      {
+        "id": "analysis-1",
+        "status": "pending",
+        "runTimeParameters": [
+          {
+            "displayName": "Normalization CSV",
+            "variableName": "csv_data",
+            "description": "Please use the template CSV from the plate reader ",
+            "type": "csv_file",
+            "file": {
+              "id": "ed6d08c8-7c8d-480f-93d2-5488c364031f",
+              "name": "od_norm.csv"
+            }
+          },
+          {
+            "displayName": "Dry Run",
+            "variableName": "dry_run",
+            "description": "This is held for later use. Does not affect the protocol.",
+            "type": "bool",
+            "value": true,
+            "default": true
+          },
+          {
+            "displayName": "Waste Type",
+            "variableName": "waste_type",
+            "description": "Where to dispose of the waste.",
+            "type": "int",
+            "choices": [
+              {
+                "displayName": "Waste Chute",
+                "value": 1
+              },
+              {
+                "displayName": "Trash bin",
+                "value": 2
+              }
+            ],
+            "value": 1,
+            "default": 1
+          }
+        ]
+      }
+    ]
+  }
+}

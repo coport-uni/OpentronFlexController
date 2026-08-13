@@ -1,0 +1,19 @@
+{
+  "data": {
+    "id": "analysis-1",
+    "status": "completed",
+    "result": "not-ok",
+    "errors": [
+      {
+        "id": "74426f10-fee5-47d8-aa61-0ecb33b24cc5",
+        "createdAt": "2026-08-13T01:49:51.742221Z",
+        "isDefined": false,
+        "errorType": "ExceptionInProtocolError",
+        "errorCode": "4000",
+        "detail": "ProtocolCommandFailedError [line 16]: Error 4000 GENERAL_ERROR (ProtocolCommandFailedError): PythonException: FileNotFoundError: Labware \"corning_96_wellplate_9999ul_flat\" not found with version 1 in namespace \"opentrons\".",
+        "errorInfo": {}
+      }
+    ],
+    "commands": []
+  }
+}

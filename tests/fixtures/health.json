@@ -1,0 +1,6 @@
+{
+  "name": "opentrons-dev",
+  "api_version": "0.0.0.dev0",
+  "system_version": "0.0.0",
+  "robot_model": "OT-3 Standard"
+}
