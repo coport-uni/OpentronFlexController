@@ -21,7 +21,73 @@ The development specification is
 pip install requests
 ```
 
+## What actually runs where
+
+`main.py` and `flex_controller.py` run **on your computer**. What goes to
+the robot is the **protocol** — an ordinary Python file — which the Flex
+compiles into a list of commands and executes:
+
+```
+your_protocol.py  ──POST /protocols──▶  Flex analyses it
+                                            │
+                                            ▼
+                                    a list of commands
+                                            │
+                          POST /runs/{id}/actions {"play"}
+                                            ▼
+                                   the robot executes them
+```
+
+`protocols/hello_flex.py` is a twenty-line example. Uploading it produces
+twelve robot commands, one per API call in the file.
+
 ## Use
+
+### Watch it run, step by step
+
+`main.py` is the operator console: it reads the robot's information,
+verifies the protocol, uploads it, and prints each command as the robot
+completes it.
+
+```bash
+python3 main.py --profile dev
+```
+
+```
+     1  OK    home the gantry
+     5  OK    load labware Culture Plate at temperatureModuleV2
+    11  OK    configure nozzles to SINGLE, starting A1
+    17  OK    pick up tip from Tiprack 1[H12]
+    18  OK    aspirate 90.0 uL at Diluent Reservoir[A1]
+    19  OK    dispense 90.0 uL at Normalization Plate[A1]
+    24  OK    move to 96ChannelWasteChute
+```
+
+Upload your own protocol, and stop before anything moves:
+
+```bash
+python3 main.py --profile dev --protocol protocols/hello_flex.py \
+  --csv "" --verify-only
+```
+
+Walk the planned steps one at a time, pressing Enter between each:
+
+```bash
+python3 main.py --profile dev --verify-only --step
+```
+
+| Option | Effect |
+|---|---|
+| `--verify-only` | stop after the analysis gate; nothing moves |
+| `--step` | advance the planned steps by hand |
+| `--no-plan` | skip the plan listing, which is long |
+| `--tick` | seconds between reads while the run is in flight |
+| `--csv ""` | for a protocol with no file parameter |
+
+Exit status is 0 on success, 1 on a reported failure, 2 if the operator
+declined the run.
+
+### Batch use
 
 Analyse a protocol without running it:
 
@@ -114,8 +180,9 @@ python3 claude_test/show_error_detection.py
 
 | Path | Contents |
 |---|---|
-| `flex_controller.py` | The `FlexController` class and the CLI |
-| `protocols/` | The reference protocol, OD-600 normalization |
+| `main.py` | Operator console: robot info, verify, upload, step-by-step run |
+| `flex_controller.py` | The `FlexController` class and the batch CLI |
+| `protocols/` | The reference protocol, plus `hello_flex.py` as a minimal example |
 | `data/` | Verification CSVs, 3-row and 96-row |
 | `configs/` | The deck fixture list of spec §3.4 |
 | `tests/` | Unit and integration tests, fixtures, fault protocols |

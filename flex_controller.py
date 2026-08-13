@@ -331,6 +331,37 @@ class FlexController:
             return False
         return True
 
+    def get_instruments(self) -> list[dict]:
+        """Read the pipettes and gripper currently attached.
+
+        What a protocol asks for and what is on the robot are separate
+        facts, and the analysis checks only the first. Reading this
+        before a run is how an operator catches the difference.
+
+        Returns:
+            One entry per attached instrument, each with
+            ``instrumentType``, ``instrumentModel``, ``mount``, and
+            ``serialNumber``.
+
+        Raises:
+            TransportError: If the robot cannot be reached.
+        """
+        body = self._retry("GET", "/instruments")
+        return body.get("data", [])
+
+    def get_modules(self) -> list[dict]:
+        """Read the hardware modules currently attached.
+
+        Returns:
+            One entry per attached module, each with ``moduleModel`` and
+            ``serialNumber``.
+
+        Raises:
+            TransportError: If the robot cannot be reached.
+        """
+        body = self._retry("GET", "/modules")
+        return body.get("data", [])
+
     # ---- Deck ---------------------------------------------------------
 
     def get_deck_configuration(self) -> list[dict]:

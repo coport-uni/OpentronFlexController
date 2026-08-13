@@ -142,3 +142,75 @@ tests agreeing with the code that produced them.
 - **TC-09 remains a documented deviation from spec §7**, confirmed a
   second time by direct observation rather than by test.
 - **TC-12 and TC-13 are still not run.** No Opentrons Flex is present.
+
+---
+
+## Task 3: Operator console (`main.py`) with step-by-step run display
+
+**Date**: 2026-08-13
+**GitHub Issue**: #4
+**Requested**: read the Flex's information, verify and upload a protocol,
+and watch the program execute step by step.
+
+### Command Input Validation
+
+- **Target**: a new `main.py` at the repository root, plus the two
+  read-only endpoint methods it needs on `FlexController`.
+- **Method**: a staged console that reads robot identity and attached
+  hardware, applies the deck, verifies through the analysis gate, then
+  streams each command as the robot completes it. An interactive mode
+  walks the analysis command list one step at a time.
+- **Purpose**: make the tool observable. Until now the only way to see
+  what the robot did was to read a JSON artifact after the fact.
+- **Reference materials reviewed**: `docs/flex_controller_spec_v0.3.md`
+  §4.2 (method table), §5 (workflow), and the live command API, probed
+  directly before designing the display (see Findings).
+
+### Findings that shaped the design (probed, not assumed)
+
+- `GET /runs/{id}/commands` grows during a run — `totalLength` went
+  40 → 483 → 788 — so commands can be streamed as they complete.
+- Each command carries `status`, `startedAt`, `completedAt`, and
+  `links.current` names the command executing now.
+- A 96-row run finishes in ~4.2 s on the simulator, too fast to follow,
+  so a deterministic step-through of the analysis is offered alongside
+  the live stream.
+
+### Checklist
+
+- [x] Add `get_instruments` and `get_modules` to `FlexController`
+- [x] Record that the class now exceeds the 30-method review threshold of
+      spec §4.3 rule 5, and carry out the reconsideration it prescribes
+- [x] `main.py` stage 1: robot identity, pipettes, gripper, modules
+- [x] `main.py` stage 2: apply and show the deck configuration
+- [x] `main.py` stage 3: upload the CSV and the protocol
+- [x] `main.py` stage 4: wait for the analysis and show the verdict
+- [x] `main.py` stage 5: list the planned steps, readably
+- [x] `main.py` stage 6: run, streaming each command as it completes
+- [x] `main.py` stage 7: final summary with per-type counts and errors
+- [x] `--verify-only` stops after the gate; `--step` walks the plan
+- [x] Resolve labware, module, and pipette identifiers to readable names
+- [x] Unit tests for the command describer and the stage helpers
+- [x] Verify by running against the development server, output kept
+- [x] `ruff check` and `ruff format --check` clean
+
+### Outcome notes
+
+- **Two display defects found by running the console, not by testing
+  it.** Both produced blank labware and well names during a run, and
+  neither was visible from the analysis path. First, a run assigns its
+  own identifiers to the same labware, so a name map built from the
+  analysis resolves nothing. Second, a run lists a labware only once it
+  has been loaded, so reading the run before the command list leaves
+  names a tick behind. The stream now rebuilds names from the run and
+  reads the run after the commands.
+- **`FlexController` is at 32 methods**, past the review threshold of
+  spec §4.3 rule 5. The reconsideration the rule prescribes is
+  `docs/transport_layer_review.md`: do not split yet, and the four
+  conditions that would make the split due. The test now asserts the
+  exact count and requires that document to exist.
+- **A second entry point now exists** beside the CLI function of spec
+  §4.1. `main.py` is a client of the class and adds no robot behaviour,
+  but it is a deviation and is recorded as one.
+- **`protocols/hello_flex.py` added** as a minimal example, to make it
+  plain that what reaches the robot is an ordinary Python file.
