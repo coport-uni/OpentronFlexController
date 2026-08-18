@@ -1,0 +1,24 @@
+# Conda environment for the Opentrons Flex control tool.
+#
+#   conda env create -f environment.yml
+#   conda activate opentrons-flex
+#
+# The robot itself needs nothing from this file. These are the packages the
+# control tool needs on the computer that talks to it.
+name: opentrons-flex
+
+channels:
+  - conda-forge
+
+dependencies:
+  # CLAUDE.md gives Python 3.10 as the floor. Pinned to a single minor
+  # version so an environment built today matches one built later.
+  - python=3.12
+
+  # The tool's only runtime dependency.
+  - requests>=2.31
+
+  # Development only. The README asks readers to run both, so both belong
+  # here rather than in a separate file they have to find.
+  - pytest>=8.0
+  - ruff>=0.6

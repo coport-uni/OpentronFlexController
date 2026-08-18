@@ -347,3 +347,63 @@ what was borrowed from which repository.
   immediately before the merge.
 - **§15.3 was not satisfied and this is recorded, not hidden.** The PR
   merged 7492 lines across 42 files against guidance of 400.
+
+---
+
+## Task 7: Conda setup instructions in README, verified
+
+**Date**: 2026-08-13
+**GitHub Issue**: #6
+**Requested**: add conda-based environment setup and command examples to
+`README.md`, and verify the commands actually work.
+
+### Command Input Validation
+
+- **Target**: `README.md`, plus an `environment.yml` for conda to consume.
+- **Method**: create a real conda environment from the file, install into
+  it, and run every command the README will publish, from a shell where
+  that environment is active.
+- **Purpose**: the install section currently says `pip install requests`
+  and nothing else. A reader on conda has no starting point, and the dev
+  tooling (`pytest`, `ruff`) is not mentioned at all.
+- **Reference materials**: `CLAUDE.md` §5.1 verification gate, `ruff.toml`,
+  the existing `README.md` §3 and §7.
+
+### Checklist
+
+- [x] Add `environment.yml` naming the Python version and dependencies
+- [x] Create the environment from that file on this machine
+- [x] Verify `python`, `requests`, `pytest`, `ruff` resolve inside it
+- [x] Run every README command inside the environment and keep the output
+- [x] Rewrite README §3 Step 1 with conda first, pip as the alternative
+- [x] Add a command-examples section covering the common tasks
+- [x] Confirm no README command is published without having been run
+- [x] `ruff`, the convention audit, and the 84 tests still pass
+- [x] Commit, PR, merge
+
+### Notes
+
+- Spec CLAUDE.md gives Python 3.10+; this machine's system Python is
+  3.12.3, so the environment pins a version at or above the floor rather
+  than matching the host by accident.
+
+### Outcome notes
+
+- **Two defects found by running the commands rather than writing them.**
+  Both would have shipped had the section been written from memory.
+- **`ruff format --check .` failed in the conda environment but passed on
+  the host.** Ruff 0.16 began formatting Python inside Markdown fences;
+  the host had 0.15.9, the environment installed 0.16.3. A command the
+  README publishes must not pass or fail depending on which ruff the
+  reader happens to have, so `*.md` is now excluded in `ruff.toml` and
+  both versions were confirmed to agree.
+- **The README misdescribed its own code sample.** It introduced the
+  snippet as `hello_flex.py` "minus its imports and metadata", but the
+  snippet had also been compressed and stripped of `label=` arguments.
+  Reworded to say what it actually is.
+- **All 36 commands in the README's bash blocks were executed**, including
+  the pip and venv alternative, which was run in a throwaway virtual
+  environment to confirm the tool and the tests work outside conda too.
+- The environment was **deleted and rebuilt from `environment.yml`** to
+  prove the documented path works from nothing. It takes about ten
+  seconds.
