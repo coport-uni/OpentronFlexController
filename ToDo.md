@@ -527,3 +527,104 @@ Merging lowers the risk. It does **not** discharge the verification gate.
       findings, 95 tests passing
 
 **Nothing on `main` may be read as evidence about hardware.**
+
+---
+
+## Task 10: Document the Windows PowerShell conda trap in README
+
+**Date**: 2026-08-18
+**GitHub Issue**: pending — `gh` is not installed on this Windows host
+**Requested**: record the reason `conda` is unavailable in PowerShell in
+`README.md`.
+
+### Command Input Validation
+
+- **Target**: `README.md` §3 Step 1, where the reader is told to run
+  `conda env create` and `conda activate`.
+- **Method**: add a collapsed Windows note giving the symptom, the
+  diagnosis command, the one-line remedy, and how to confirm it worked.
+- **Purpose**: §3 Step 1 currently assumes `conda` resolves. On a fresh
+  Windows install it does not, and the failure names the wrong cause —
+  the shell reports a missing command, while the real cause is a blocked
+  profile. A reader who trusts the message edits `PATH` and gets nowhere.
+
+### Reference material
+
+The diagnosis was measured on this machine, 2026-08-18:
+
+- Miniconda is installed at `C:\Users\swoho\miniconda3`; calling
+  `Scripts\conda.exe --version` directly answers `conda 26.5.3`.
+- Neither the user nor the machine `PATH` carries a conda entry. This is
+  expected: `conda init` uses a profile hook, not `PATH`.
+- `conda init powershell` has already run — the hook block is present in
+  `...\WindowsPowerShell\profile.ps1`.
+- `Get-ExecutionPolicy -List` reports every scope `Undefined`, so the
+  effective policy is `Restricted`, the profile is refused with
+  `PSSecurityException / UnauthorizedAccess`, and `conda` is never
+  defined.
+
+### Checklist
+
+- [x] Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` with the
+      operator's consent, and capture the before/after output — the
+      remedy is not documented until it has been run (§5.1)
+- [x] Add the Windows note to `README.md` §3 Step 1
+- [x] Append the finding to `LearnedPatterns.md` §5 Environment
+      Specifics (see LP §5)
+- [x] Cut branch `docs/windows-powershell-conda`
+- [ ] Open the GitHub issue and the PR once `gh` is available
+
+### Verification
+
+The operator applied the policy change and reported it working; the
+state was then measured from a clean PowerShell session with the
+inherited `Process` scope cleared.
+
+**Before** — reproduced with `-ExecutionPolicy Restricted`:
+
+```
+Restricted
+. : File ...\WindowsPowerShell\profile.ps1 cannot be loaded because
+running scripts is disabled on this system.
+    + FullyQualifiedErrorId : UnauthorizedAccess
+conda : The term 'conda' is not recognized as the name of a cmdlet,
+function, script file, or operable program.
+    + FullyQualifiedErrorId : CommandNotFoundException
+```
+
+**After**:
+
+```
+        Scope ExecutionPolicy
+        ----- ---------------
+MachinePolicy       Undefined
+   UserPolicy       Undefined
+      Process       Undefined
+  CurrentUser    RemoteSigned
+ LocalMachine       Undefined
+
+effective : RemoteSigned
+conda 26.5.3
+
+# conda environments:
+base                 *   C:\Users\swoho\miniconda3
+opentrons-flex           C:\Users\swoho\miniconda3\envs\opentrons-flex
+```
+
+**The locked-down fallback**, also measured rather than assumed —
+`conda.exe activate` under `Restricted` refuses and leaves no
+environment active:
+
+```
+CondaError: Run 'conda init' before 'conda activate'
+```
+
+No Python file changed, so `ruff` and `pytest` have nothing to say
+about this task. Every claim added to `README.md` corresponds to one of
+the outputs above.
+
+### Open
+
+`gh` is not installed on this Windows host, so the issue and the pull
+request could not be created here. The branch stays local and unpushed
+until that is resolved.

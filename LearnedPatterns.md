@@ -204,6 +204,23 @@ than rediscovered. Format and categories follow CLAUDE.md §10.
   reapply configuration from a versioned file.
   (from ToDo#1 B)
 
+**`conda` is missing from PowerShell even after `conda init`**
+- **Problem**: `conda --version` in PowerShell answered
+  `CommandNotFoundException`, on a machine where Miniconda was
+  installed and `conda init powershell` had already run.
+- **Cause**: `conda init` adds no `PATH` entry — it writes a hook into
+  the PowerShell profile. Every execution-policy scope was `Undefined`,
+  so the effective policy was `Restricted`, the profile was refused
+  with `PSSecurityException / UnauthorizedAccess`, and the hook never
+  defined `conda`. The reported error names the symptom, not the cause.
+- **Fix**: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then a
+  new window. No administrator rights needed. Documented in `README.md`
+  §3 Step 1.
+- **Rule**: Never diagnose a missing `conda` on Windows by reading
+  `PATH`; run `Get-ExecutionPolicy -List` first, because `conda init`
+  works through the profile and a blocked profile fails silently.
+  (from ToDo#10)
+
 ---
 
 ## §99. Uncategorized

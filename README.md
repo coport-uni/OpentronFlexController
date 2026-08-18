@@ -172,6 +172,69 @@ Everything from here on assumes that environment is active. Your shell
 prompt will usually show `(opentrons-flex)`.
 
 <details>
+<summary><b>Windows: <code>conda</code> not found in PowerShell</b></summary>
+
+```
+PS> conda --version
+conda : The term 'conda' is not recognized as the name of a cmdlet,
+function, script file, or operable program.
+```
+
+The message names the wrong culprit, and the obvious reaction — go and
+edit `PATH` — leads nowhere. `conda init powershell` deliberately puts
+nothing on `PATH`. It writes a hook into your PowerShell profile
+instead, and a profile is a script. If the execution policy forbids
+scripts, the profile never loads and the hook never runs.
+
+So interrogate the policy, not the `PATH`:
+
+```powershell
+Get-ExecutionPolicy -List
+```
+
+Every scope reading `Undefined` means the effective policy is
+`Restricted` — the Windows client default — and a `Restricted` shell
+refuses its own profile on the way up:
+
+```
+. : File ...\WindowsPowerShell\profile.ps1 cannot be loaded because
+running scripts is disabled on this system.
+    + FullyQualifiedErrorId : UnauthorizedAccess
+```
+
+Allow local scripts for your own account. No administrator rights are
+needed, and it does not weaken the check on downloaded ones:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Open a new window and confirm:
+
+```powershell
+Get-ExecutionPolicy      # RemoteSigned
+conda --version          # conda 26.5.3
+```
+
+If your machine is locked down and the policy cannot be changed, note
+that calling `conda.exe` by its full path is only half a workaround.
+One-shot commands work; activation does not, because activation has to
+edit the shell it is called from:
+
+```
+CondaError: Run 'conda init' before 'conda activate'
+```
+
+Call the environment's interpreter directly instead, and skip
+activation altogether:
+
+```
+%USERPROFILE%\miniconda3\envs\opentrons-flex\python.exe main.py --profile dev
+```
+
+</details>
+
+<details>
 <summary><b>What the environment contains, and why</b></summary>
 
 | Package | Why |
