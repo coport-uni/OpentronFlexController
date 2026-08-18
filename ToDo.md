@@ -628,3 +628,39 @@ the outputs above.
 `gh` is not installed on this Windows host, so the issue and the pull
 request could not be created here. The branch stays local and unpushed
 until that is resolved.
+
+### Update — `gh` installed on the Windows host
+
+At the operator's request, the blocker above was removed:
+
+```
+$ winget install --id GitHub.cli -e --source winget
+Found GitHub CLI [GitHub.cli] Version 2.97.0
+Successfully verified installer hash
+Successfully installed
+
+$ gh --version
+gh version 2.97.0 (2026-07-31)
+```
+
+The installer put `gh.exe` in `C:\Program Files\GitHub CLI\` and added
+that directory to the machine `PATH`, so terminals opened after the
+install resolve `gh` without further configuration.
+
+Authentication is still outstanding, and cannot be done from here:
+`gh auth login` needs a browser or a pasted token, both of which
+require an interactive session.
+
+```
+$ gh auth status
+You are not logged into any GitHub hosts. To log in, run: gh auth login
+```
+
+- [x] Install `gh`
+- [ ] `gh auth login` — operator, interactive
+- [ ] Open the GitHub issue and the PR for this task once logged in
+
+A second note: this host had no git identity at all, so the first
+commit attempt was refused. It is now set **repository-locally** to the
+value the previous commit used, `coport-uni <ohsungwoo@unist.ac.kr>`.
+Nothing was written to the global git configuration.
