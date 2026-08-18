@@ -48,6 +48,7 @@ known_verbs = {
     "log",
     "main",
     "monitor",
+    "parse",
     "pause",
     "play",
     "print",

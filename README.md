@@ -536,6 +536,44 @@ python claude_test/audit_mit_convention.py    # findings : 0
 python main.py --help
 ```
 
+### Running on a real Flex
+
+Supply the robot's address, a protocol, and a CSV. Everything else has a
+safe default.
+
+```bash
+conda activate opentrons-flex
+
+python main.py --profile robot --host 192.168.1.50 \
+  --expect-name flex-lab-01 \
+  --protocol my_protocol.py --csv my_data.csv \
+  --verify-only                       # dry run first: nothing moves
+```
+
+Drop `--verify-only` when the dry run looks right.
+
+> ⚠️ **Read [`docs/real_device_procedure.md`](docs/real_device_procedure.md)
+> first.** It covers the physical checks no software can make, the
+> dry-run-then-run order, and how to stop a run.
+
+Three things differ from `dev`, and two of them are safety decisions:
+
+| | `dev` | `robot` |
+|---|---|---|
+| Deck configuration | reference layout is **written** | **read only** unless you pass `--deck` |
+| Before the run | starts immediately | you type the robot's **name**, not "yes" |
+| Pre-flight | informational | wrong robot or unreachable robot **blocks** |
+
+The deck is not written because doing so asserts which fixtures are
+physically bolted on. Claim a waste chute that is not there and the
+analysis will not object ([D-1](docs/spec_deviations.md#d-1)) — the run
+fails mid-motion instead.
+
+The prompt asks for the robot's name because muscle memory types "yes",
+and it cannot type the name of a machine you have not looked at.
+
+**No hardware has ever run this.** TC-12 and TC-13 are open.
+
 ### The two profiles
 
 | | `dev` | `robot` |
@@ -587,6 +625,7 @@ There is no way to switch that off.
 | [`upstream_references.md`](docs/upstream_references.md) | What we borrowed, and from where |
 | [`code_quality_audit.md`](docs/code_quality_audit.md) | Convention compliance |
 | [`dev_server_setup.md`](docs/dev_server_setup.md) | Building the simulator |
+| [`real_device_procedure.md`](docs/real_device_procedure.md) | **The S5 runbook: how to run on a real Flex** |
 | [`transport_layer_review.md`](docs/transport_layer_review.md) | Why the class is not split yet |
 | [`LearnedPatterns.md`](LearnedPatterns.md) | Traps found, so they are not rediscovered |
 

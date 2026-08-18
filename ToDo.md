@@ -407,3 +407,84 @@ what was borrowed from which repository.
 - The environment was **deleted and rebuilt from `environment.yml`** to
   prove the documented path works from nothing. It takes about ten
   seconds.
+
+---
+
+## Task 8: Prepare the real-device path (stage S5)
+
+**Date**: 2026-08-13
+**GitHub Issue**: #8
+**Requested**: make a real device runnable from this conda environment by
+supplying only its IP, a protocol file, and a CSV, and write down how to
+do it.
+
+### Command Input Validation
+
+- **Target**: `main.py` argument handling and the robot-profile path, plus
+  a runbook document.
+- **Method**: remove the dangerous default, add the pre-flight checks of
+  spec §10 that software can actually make, strengthen the confirmation,
+  and document the S5 procedure end to end.
+- **Purpose**: stage S5 acceptance. Every earlier task ran against a
+  simulator; this is the first that ends with a machine moving.
+- **Reference materials**: spec §10 (transition checklist), §4.4
+  (profiles), §5 (workflow), CLAUDE.md §5.1 rules 2 and 5,
+  `docs/spec_deviations.md` D-1.
+
+### The defect this task starts from
+
+`--deck` defaults to `configs/deck_od_normalization.json`, and
+`show_deck` **writes** whatever it is given. On `--profile robot` that
+silently overwrites the real robot's deck configuration with our
+reference layout — asserting a waste chute at D3 whether or not one is
+bolted there. Per D-1 the analysis will not object, so the mismatch first
+appears mid-run, on a machine that is already moving.
+
+### Checklist
+
+- [x] `--deck` no longer defaults to writing; `robot` reads unless asked
+- [x] Pre-flight: reachability, robot name, apiLevel support, attached
+      instruments, attached modules, deck configuration
+- [x] Block only on facts the tool is certain of; show the rest for the
+      operator standing there to judge
+- [x] Confirmation requires typing the robot's own name, not "yes"
+- [x] No bypass flag for the confirmation (spec §4.4, §5.2)
+- [x] `--expect-name` for spec §10 item 4
+- [x] Write `docs/real_device_procedure.md`: TC-12 then TC-13, abort
+      procedure, what to record
+- [x] README section for the real device
+- [x] Verify every reachable path against the development server
+- [x] State plainly that the hardware path is **not** verified, and leave
+      the branch unmerged until it is (CLAUDE.md §5.1 rule 2)
+
+### Notes
+
+- Spec §10 has twelve items. Seven are observable from software (2, 3, 4,
+  5, 6, 7, 9); items 8 and 10 — fixtures physically installed, labware
+  position calibration — are not, and must be listed for a human.
+- TC-12 and TC-13 cannot be run here. No Opentrons Flex exists in this
+  environment.
+
+### Outcome notes
+
+- **A dangerous default was the starting point, not a late discovery.**
+  `--deck` defaulted to the reference layout and the console wrote it
+  unconditionally, so `--profile robot` would have overwritten a real
+  robot's deck configuration on the first run. Fixed by making the
+  default profile-aware: `dev` applies the reference layout, `robot`
+  reads and shows it, and writing takes an explicit `--deck`. Both
+  directions were verified against the development server by planting a
+  marker fixture and checking whether it survived.
+- **The confirmation now takes the robot's name, not "yes".** Verified:
+  typing `yes` declines with exit 2 and creates no run.
+- **Pre-flight blocks on two things only** — unreachable robot, wrong
+  robot. Everything else is shown for the operator, because this console
+  cannot know what an arbitrary protocol needs and the analysis gate
+  already refuses what the robot itself rejects.
+- **The audit caught three real faults in this task's own code**: `parse`
+  and `verdicts` naming, and missing docstrings on the new test stub.
+- **The documented stop command was executed against a live run** and
+  took it to `stopped`, rather than being written from memory.
+- **TC-12 and TC-13 remain unrun.** No Opentrons Flex exists here. Per
+  CLAUDE.md §5.1 rule 2 this branch is pushed but **must not be merged**
+  until they have been run with an operator present.

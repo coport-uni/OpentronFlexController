@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import main  # noqa: E402
 from flex_controller import AnalysisError, TransportError  # noqa: E402
+from main import check_before_running  # noqa: E402
 
 pipette_id = "pipette-1"
 tiprack_id = "tiprack-1"
@@ -311,3 +312,203 @@ def test_the_csv_can_be_switched_off():
     args = main.build_parser().parse_args(["--csv", ""])
 
     assert args.csv == ""
+
+
+# ---- Pre-flight, spec section 10 --------------------------------------
+
+
+class StubController:
+    """A controller that answers pre-flight without a network.
+
+    Attributes:
+        base_url: Where it claims to be.
+        writes: Deck configurations it was asked to store, so a test can
+            prove the robot profile wrote none.
+    """
+
+    def __init__(self, name="flex-01", instruments=None, modules=None):
+        self.base_url = "http://10.0.0.5:31950"
+        self.writes: list = []
+        self._name = name
+        self._instruments = instruments if instruments is not None else []
+        self._modules = modules if modules is not None else []
+
+    def health(self):
+        """Report the identity pre-flight asks for."""
+        return {
+            "name": self._name,
+            "api_version": "8.2.0",
+            "system_version": "8.2.0",
+        }
+
+    def get_instruments(self):
+        """Report the attached pipettes and gripper."""
+        return self._instruments
+
+    def get_modules(self):
+        """Report the attached modules."""
+        return self._modules
+
+    def get_deck_configuration(self):
+        """Report one registered fixture, enough to be counted."""
+        return [{"cutoutId": "cutoutA1", "cutoutFixtureId": "singleLeftSlot"}]
+
+    def set_deck_configuration(self, fixtures):
+        """Record a write so a test can prove one did not happen.
+
+        Args:
+            fixtures: The fixture list the caller asked to store.
+
+        Returns:
+            The same list, as the real endpoint does.
+        """
+        self.writes.append(fixtures)
+        return fixtures
+
+
+class UnreachableController(StubController):
+    """A controller whose robot does not answer."""
+
+    def health(self):
+        """Fail the way an unreachable robot does.
+
+        Raises:
+            TransportError: Always; that is the point of this stub.
+        """
+        raise TransportError("connection refused")
+
+
+def read_verdicts(results):
+    """Map each checked item to its verdict.
+
+    Args:
+        results: Output of ``check_before_running``.
+
+    Returns:
+        Item name to verdict.
+    """
+    return {item: verdict for verdict, item, _ in results}
+
+
+def test_preflight_stops_when_the_robot_does_not_answer(tmp_path):
+    """An unreachable robot is the one fault worth stopping everything for."""
+    protocol = tmp_path / "p.py"
+    protocol.write_text('requirements = {"apiLevel": "2.20"}', encoding="utf-8")
+
+    results = check_before_running(UnreachableController(), protocol, None)
+
+    assert read_verdicts(results) == {"reachable": "stop"}
+
+
+def test_preflight_stops_on_the_wrong_robot(tmp_path):
+    """Reaching the wrong machine must not become a run on it.
+
+    Spec section 10 item 4 asks the operator to confirm the target. Given
+    a name to expect, the console can confirm it for them.
+    """
+    protocol = tmp_path / "p.py"
+    protocol.write_text('requirements = {"apiLevel": "2.20"}', encoding="utf-8")
+
+    results = check_before_running(StubController(), protocol, "flex-99")
+
+    assert read_verdicts(results)["robot name"] == "stop"
+
+
+def test_preflight_accepts_the_expected_robot(tmp_path):
+    """The name matching is the point; it must not stop a correct one."""
+    protocol = tmp_path / "p.py"
+    protocol.write_text('requirements = {"apiLevel": "2.20"}', encoding="utf-8")
+
+    results = check_before_running(StubController(), protocol, "flex-01")
+
+    assert read_verdicts(results)["robot name"] == "ok"
+
+
+def test_preflight_only_looks_at_hardware_it_cannot_judge(tmp_path):
+    """Attached hardware is reported, never used to block.
+
+    The console cannot know what an arbitrary protocol needs, so deciding
+    for the operator would be guessing. The analysis gate does the real
+    refusing.
+    """
+    protocol = tmp_path / "p.py"
+    protocol.write_text('requirements = {"apiLevel": "2.20"}', encoding="utf-8")
+
+    results = check_before_running(StubController(), protocol, "flex-01")
+
+    for item in ("pipette", "gripper", "modules", "deck configuration"):
+        assert read_verdicts(results)[item] == "look"
+    assert not [row for row in results if row[0] == "stop"]
+
+
+def test_preflight_reports_a_robot_with_nothing_attached(tmp_path):
+    """An empty robot is a fact to show, not a crash."""
+    protocol = tmp_path / "p.py"
+    protocol.write_text('requirements = {"apiLevel": "2.20"}', encoding="utf-8")
+
+    results = check_before_running(StubController(), protocol, "flex-01")
+
+    assert ("look", "pipette", "none attached") in results
+    assert ("look", "gripper", "none attached") in results
+
+
+def test_show_preflight_blocks_only_on_a_stop_row(capsys):
+    """The gate reads its own table the way the operator does."""
+    assert main.show_preflight([("ok", "reachable", "x")]) is True
+    assert main.show_preflight([("look", "pipette", "x")]) is True
+    assert main.show_preflight([("stop", "robot name", "x")]) is False
+    assert "Blocked" in capsys.readouterr().out
+
+
+# ---- apiLevel is read, never executed ---------------------------------
+
+
+def test_api_level_is_read_as_text(tmp_path):
+    """A protocol is parsed, not imported.
+
+    Importing it to inspect it would run its module-level code on the
+    computer driving the robot.
+    """
+    protocol = tmp_path / "p.py"
+    protocol.write_text(
+        'requirements = {"robotType": "Flex", "apiLevel": "2.20"}\n'
+        "raise SystemExit('this must never execute')\n",
+        encoding="utf-8",
+    )
+
+    assert main.read_declared_api_level(protocol) == (2, 20)
+
+
+def test_a_protocol_without_an_api_level_is_not_an_error(tmp_path):
+    """Saying so beats guessing."""
+    protocol = tmp_path / "p.py"
+    protocol.write_text("# nothing declared\n", encoding="utf-8")
+
+    assert main.read_declared_api_level(protocol) is None
+
+
+def test_version_parsing_survives_odd_strings():
+    """Robot software versions are not always three clean numbers."""
+    assert main.parse_version("8.2.0") == (8, 2, 0)
+    assert main.parse_version("0.0.0.dev0") == (0, 0, 0)
+    assert main.parse_version("unknown") == ()
+
+
+# ---- The deck default, which is a safety decision ---------------------
+
+
+def test_deck_is_unset_by_default_so_a_profile_can_decide():
+    """`--deck` must not carry a path that would be written to a robot."""
+    assert main.build_parser().parse_args([]).deck is None
+
+
+def test_only_the_dev_profile_writes_a_deck_without_being_asked():
+    """Writing a deck asserts which fixtures are physically bolted on.
+
+    On a real robot that assertion may be false, and per
+    docs/spec_deviations.md D-1 the analysis will not object -- the run
+    fails mid-motion instead. So the reference layout is applied only on
+    the profile it describes.
+    """
+    assert "dev" in main.deck_written_by_default
+    assert "robot" not in main.deck_written_by_default

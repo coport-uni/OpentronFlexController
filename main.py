@@ -19,13 +19,23 @@ Stop after the analysis gate, without moving anything:
 
 Walk the planned steps one at a time:
 
-    python3 main.py --profile dev --verify-only --step
+    python main.py --profile dev --verify-only --step
+
+Against a real device, supplying only its address, a protocol, and a CSV.
+The deck is read rather than written, and the run is confirmed by typing
+the robot's own name:
+
+    python main.py --profile robot --host 192.168.1.50 \
+      --protocol my_protocol.py --csv my_data.csv
+
+See docs/real_device_procedure.md before doing that.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -42,8 +52,19 @@ repository_root = Path(__file__).parent
 
 default_protocol = repository_root / "protocols" / "OD_Normalization.py"
 default_csv = repository_root / "data" / "od_normalization.csv"
-default_deck = repository_root / "configs" / "deck_od_normalization.json"
+reference_deck = repository_root / "configs" / "deck_od_normalization.json"
 default_parameters = {"dry_run": True, "waste_type": 1}
+
+# Writing a deck configuration tells the robot which fixtures are bolted
+# where. Asserting a waste chute that is not physically installed is how
+# a run drives into thin air, and spec section 7's analysis will not
+# object -- see docs/spec_deviations.md D-1. So the reference layout is
+# applied only on the profile it describes. On a real device the deck is
+# read and shown, and writing it takes an explicit --deck.
+deck_written_by_default = ("dev",)
+
+# The lowest robot software the checklist of spec section 10 accepts.
+minimum_robot_version = (7, 0, 0)
 
 # The console re-reads the command list on every tick, so one page must
 # be able to hold a whole run; the reference protocol plans 788 commands
@@ -219,6 +240,182 @@ def format_step(index: int, command: dict, names: dict[str, str]) -> str:
     return f"  {index + 1:>4}  {mark}  {describe_command(command, names)}"
 
 
+def read_declared_api_level(protocol_path: str | Path) -> tuple | None:
+    """Read the apiLevel a protocol declares, without importing it.
+
+    Importing a protocol to inspect it would run its module-level code on
+    the computer driving the robot, so the declaration is read as text.
+
+    Args:
+        protocol_path: Local path to the protocol file.
+
+    Returns:
+        The version as a pair of integers, or ``None`` when the file does
+        not declare one.
+    """
+    text = Path(protocol_path).read_text(encoding="utf-8")
+    found = re.search(r"""["']apiLevel["']\s*:\s*["'](\d+)\.(\d+)["']""", text)
+    return (int(found.group(1)), int(found.group(2))) if found else None
+
+
+def parse_version(text: str) -> tuple:
+    """Turn a dotted version string into comparable integers.
+
+    Args:
+        text: A version such as ``"8.2.0"``.
+
+    Returns:
+        The leading integer components, empty when none can be read.
+    """
+    return tuple(int(part) for part in re.findall(r"\d+", str(text))[:3])
+
+
+def check_before_running(
+    controller: FlexController,
+    protocol_path: str | Path,
+    expected_name: str | None,
+) -> list[tuple[str, str, str]]:
+    """Run the checks of spec section 10 that software can actually make.
+
+    Seven of the twelve items are observable over HTTP. The remaining
+    five are physical -- whether the fixtures are really bolted on,
+    whether labware position calibration has been done -- and no amount
+    of API access substitutes for someone looking at the deck.
+
+    Only two results block: an unreachable robot, and the wrong robot.
+    Everything else is reported for the operator standing in front of the
+    machine to judge, because this console cannot know what an arbitrary
+    protocol needs, and the analysis gate already refuses anything the
+    robot itself rejects.
+
+    Args:
+        controller: The controller to interrogate.
+        protocol_path: Protocol whose apiLevel is checked for support.
+        expected_name: Robot name the operator meant to reach, or
+            ``None`` to skip that check.
+
+    Returns:
+        One ``(verdict, item, detail)`` per check, where verdict is
+        ``"ok"``, ``"look"``, or ``"stop"``.
+    """
+    results: list[tuple[str, str, str]] = []
+
+    try:
+        identity = controller.health()
+    except FlexError as error:
+        return [("stop", "reachable", f"{controller.base_url}: {error}")]
+    results.append(("ok", "reachable", controller.base_url))
+
+    name = identity.get("name") or "?"
+    if expected_name is None:
+        results.append(("look", "robot name", f"{name} -- is this the one?"))
+    elif name == expected_name:
+        results.append(("ok", "robot name", name))
+    else:
+        results.append(
+            (
+                "stop",
+                "robot name",
+                f"expected {expected_name!r}, found {name!r}",
+            )
+        )
+
+    system = identity.get("system_version") or ""
+    version = parse_version(system)
+    if not version:
+        results.append(("look", "robot software", f"cannot read {system!r}"))
+    elif version >= minimum_robot_version:
+        results.append(("ok", "robot software", system))
+    else:
+        floor = ".".join(str(part) for part in minimum_robot_version)
+        results.append(
+            (
+                "look",
+                "robot software",
+                f"{system}, below the {floor} of spec section 10",
+            )
+        )
+
+    # Whether the robot supports this apiLevel is not guessed here. The
+    # analysis settles it, and does so before any run exists, so the gate
+    # of spec section 5.2 is the enforcement and this row is context.
+    declared = read_declared_api_level(protocol_path)
+    if declared is None:
+        results.append(("look", "protocol apiLevel", "the file declares none"))
+    else:
+        results.append(
+            (
+                "look",
+                "protocol apiLevel",
+                f"{declared[0]}.{declared[1]}, checked by the analysis",
+            )
+        )
+
+    instruments = controller.get_instruments()
+    pipettes = [
+        item for item in instruments if item.get("instrumentType") == "pipette"
+    ]
+    grippers = [
+        item for item in instruments if item.get("instrumentType") == "gripper"
+    ]
+    for item in pipettes:
+        results.append(
+            (
+                "look",
+                "pipette",
+                f"{item.get('instrumentModel')} on {item.get('mount')}",
+            )
+        )
+    if not pipettes:
+        results.append(("look", "pipette", "none attached"))
+    results.append(
+        (
+            "look",
+            "gripper",
+            grippers[0].get("instrumentModel") if grippers else "none attached",
+        )
+    )
+
+    modules = controller.get_modules()
+    listed = ", ".join(item.get("moduleModel", "?") for item in modules)
+    results.append(("look", "modules", listed if modules else "none attached"))
+
+    fixtures = controller.get_deck_configuration()
+    results.append(
+        ("look", "deck configuration", f"{len(fixtures)} fixture(s) registered")
+    )
+
+    return results
+
+
+def show_preflight(results: list[tuple[str, str, str]]) -> bool:
+    """Print the pre-flight table and say whether it blocks.
+
+    Args:
+        results: Output of :func:`check_before_running`.
+
+    Returns:
+        ``True`` when nothing blocks the run.
+    """
+    marks = {"ok": "OK  ", "look": "LOOK", "stop": "STOP"}
+    for verdict, item, detail in results:
+        print(f"  {marks[verdict]}  {item:<20} {detail}")
+
+    blocked = [row for row in results if row[0] == "stop"]
+    print()
+    if blocked:
+        print(
+            "  Blocked. Fix the STOP rows above. Nothing has been\n"
+            "  uploaded, no run exists, and the robot has not moved."
+        )
+        return False
+    print(
+        "  Nothing blocks. LOOK rows are for you to judge -- this console\n"
+        "  cannot tell whether the deck matches what your protocol needs."
+    )
+    return True
+
+
 def show_robot(controller: FlexController) -> dict:
     """Print who the robot is and what is attached to it.
 
@@ -267,7 +464,10 @@ def show_deck(controller: FlexController, fixtures: list[dict]) -> None:
     """
     print_banner("2. Deck configuration")
     if fixtures:
+        print("  applying the fixture list you supplied\n")
         controller.set_deck_configuration(fixtures)
+    else:
+        print("  reading only; the robot's own configuration is left as is\n")
     stored = controller.get_deck_configuration()
     for entry in sorted(stored, key=lambda item: item["cutoutId"]):
         serial = entry.get("opentronsModuleSerialNumber", "")
@@ -491,8 +691,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--deck",
-        default=str(default_deck),
-        help="deck fixture list; pass an empty string to leave the deck alone",
+        default=None,
+        help=(
+            "deck fixture list to WRITE to the robot. Omitted, the dev "
+            "profile applies the reference layout and the robot profile "
+            "leaves the deck alone. Pass an empty string to read only"
+        ),
+    )
+    parser.add_argument(
+        "--expect-name",
+        help=(
+            "robot name you meant to reach; a mismatch stops before "
+            "anything is sent (spec section 10 item 4)"
+        ),
     )
     parser.add_argument(
         "--params",
@@ -535,9 +746,21 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = build_parser().parse_args(argv)
 
+    # An omitted --deck means "whatever is safe for this profile". Only
+    # the dev profile gets a layout written for it; a real robot's deck
+    # describes hardware that is either bolted on or is not, and this
+    # console cannot see which.
+    deck_source = args.deck
+    if deck_source is None:
+        deck_source = (
+            str(reference_deck)
+            if args.profile in deck_written_by_default
+            else ""
+        )
+
     fixtures: list[dict] = []
-    if args.deck:
-        loaded = json.loads(Path(args.deck).read_text("utf-8"))
+    if deck_source:
+        loaded = json.loads(Path(deck_source).read_text("utf-8"))
         if isinstance(loaded, dict):
             loaded = loaded.get("data", loaded).get("cutoutFixtures", [])
         fixtures = loaded
@@ -555,6 +778,12 @@ def main(argv: list[str] | None = None) -> int:
     run_id = None
 
     try:
+        print_banner("0. Pre-flight")
+        if not show_preflight(
+            check_before_running(controller, args.protocol, args.expect_name)
+        ):
+            return 1
+
         show_robot(controller)
         show_deck(controller, fixtures)
 
@@ -594,13 +823,26 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if controller.requires_confirmation:
+            robot_name = controller.health().get("name") or ""
             print_banner("Confirm")
-            answer = input(
-                f"The robot at {controller.host} will move. "
-                "Type yes to proceed: "
+            print_row("robot", f"{robot_name} at {controller.host}")
+            print_row("protocol", Path(args.protocol).name)
+            print_row("csv", Path(args.csv).name if args.csv else "none")
+            print_row("planned commands", len(analysis.get("commands") or []))
+            print_row(
+                "deck",
+                "written by this run"
+                if fixtures
+                else "left as the robot has it",
             )
-            if answer.strip().lower() != "yes":
-                print("Declined; nothing was run.")
+            print(
+                "\n  The deck will move. Stand clear and keep the e-stop "
+                "within reach.\n  Typing the robot's name confirms you mean "
+                "this machine, not another.\n"
+            )
+            answer = input(f"  Type {robot_name!r} to proceed: ")
+            if answer.strip() != robot_name:
+                print("\nDeclined; nothing was run.")
                 return 2
 
         run_id = controller.create_run(parameter_values=parameters)
