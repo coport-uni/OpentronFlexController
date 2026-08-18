@@ -39,10 +39,6 @@ installed — and the analysis does not check
 mid-run, on a moving machine. Pass `--deck <file>` only when you know the
 file describes the deck in front of you.
 
-**Typing "yes" will not start it.** The prompt asks for the robot's own
-name. Muscle memory types "yes"; it cannot type the name of a machine you
-have not looked at.
-
 ---
 
 ## The procedure
