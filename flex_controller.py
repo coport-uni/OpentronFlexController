@@ -9,6 +9,7 @@ for the specification this module implements.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import time
@@ -462,17 +463,71 @@ class FlexController:
 
     # ---- Protocol -----------------------------------------------------
 
+    @staticmethod
+    def collect_labware_files(
+        sources: list[str | Path] | None,
+    ) -> list[Path]:
+        """Expand labware arguments into the definition files to upload.
+
+        A protocol that loads custom labware needs those definitions
+        sent with it, and they are usually kept together in one folder.
+        Naming that folder is therefore accepted alongside naming each
+        file.
+
+        Args:
+            sources: Paths, each either a definition file or a directory
+                of them. A directory contributes its ``*.json`` files,
+                sorted so the upload is reproducible; it is not searched
+                recursively.
+
+        Returns:
+            The definition files, in the order given and without
+            duplicates.
+
+        Raises:
+            FileNotFoundError: If a path is neither a file nor a
+                directory.
+        """
+        if not sources:
+            return []
+
+        collected: list[Path] = []
+        for source in sources:
+            entry = Path(source)
+            if entry.is_dir():
+                found = sorted(entry.glob("*.json"))
+                if not found:
+                    logger.warning("no labware definitions in %s", entry)
+                collected.extend(found)
+            elif entry.is_file():
+                collected.append(entry)
+            else:
+                raise FileNotFoundError(f"labware path not found: {entry}")
+
+        unique: list[Path] = []
+        for entry in collected:
+            if entry not in unique:
+                unique.append(entry)
+        return unique
+
     def upload_protocol(
         self,
         protocol_path: str | Path,
         parameter_values: dict | None = None,
         parameter_files: dict | None = None,
+        labware_paths: list[str | Path] | None = None,
     ) -> tuple[str, str]:
         """Upload a protocol and start its analysis.
 
         The robot begins analysing as soon as the file lands, so the
         analysis identifier returned here is the handle for the gate of
         spec section 5.2.
+
+        Custom labware is the reason this endpoint takes more than one
+        file. The desktop application keeps such definitions in a store
+        of its own, so a protocol that runs there fails here with
+        ``FileNotFoundError: Labware ... not found`` unless the
+        definitions travel with it.
 
         Args:
             protocol_path: Local path to the protocol file.
@@ -481,18 +536,25 @@ class FlexController:
             parameter_files: File-type runtime parameters by variable
                 name, holding file identifiers. Defaults to the
                 identifiers collected by ``upload_data_file``.
+            labware_paths: Custom labware definitions to send with the
+                protocol. Each entry is a definition file or a
+                directory of them, as ``collect_labware_files``
+                resolves.
 
         Returns:
             The protocol identifier and the analysis identifier.
 
         Raises:
-            FileNotFoundError: If the local protocol does not exist.
+            FileNotFoundError: If the local protocol does not exist, or
+                a named labware path does not.
             TransportError: If the upload was rejected, or returned no
                 analysis to wait on.
         """
         source = Path(protocol_path)
         if not source.is_file():
             raise FileNotFoundError(f"protocol not found: {source}")
+
+        definitions = self.collect_labware_files(labware_paths)
 
         files = parameter_files
         if files is None:
@@ -504,12 +566,28 @@ class FlexController:
         if files:
             form["runTimeParameterFiles"] = json.dumps(files)
 
-        with source.open("rb") as handle:
+        # The protocol and its definitions share the one ``files`` field,
+        # so every handle has to stay open until the request is sent.
+        with contextlib.ExitStack() as stack:
+            parts = [
+                ("files", (source.name, stack.enter_context(source.open("rb"))))
+            ]
+            for definition in definitions:
+                parts.append(
+                    (
+                        "files",
+                        (
+                            definition.name,
+                            stack.enter_context(definition.open("rb")),
+                            "application/json",
+                        ),
+                    )
+                )
             body = self._retry(
                 "POST",
                 "/protocols",
                 timeout=self.upload_timeout,
-                files={"files": (source.name, handle)},
+                files=parts,
                 data=form,
             )
 
@@ -525,6 +603,7 @@ class FlexController:
             name=source.name,
             protocol_id=self._protocol_id,
             analysis_id=self._analysis_id,
+            labware=[definition.name for definition in definitions],
         )
         return self._protocol_id, self._analysis_id
 
@@ -914,6 +993,7 @@ class FlexController:
         csv_variable: str = "csv_data",
         parameter_values: dict | None = None,
         deck_fixtures: list[dict] | None = None,
+        labware_paths: list[str | Path] | None = None,
     ) -> dict:
         """Upload a protocol and judge its analysis without running it.
 
@@ -927,6 +1007,8 @@ class FlexController:
             parameter_values: Scalar runtime parameters by variable
                 name.
             deck_fixtures: Deck fixtures to register before uploading.
+            labware_paths: Custom labware definitions to send with the
+                protocol.
 
         Returns:
             Mapping with ``passed``, ``protocol_id``, ``analysis_id``,
@@ -951,7 +1033,9 @@ class FlexController:
             self.upload_data_file(csv_path, variable_name=csv_variable)
 
         protocol_id, analysis_id = self.upload_protocol(
-            protocol_path, parameter_values=parameter_values
+            protocol_path,
+            parameter_values=parameter_values,
+            labware_paths=labware_paths,
         )
         analysis = self.wait_for_analysis()
 
@@ -973,6 +1057,7 @@ class FlexController:
         csv_variable: str = "csv_data",
         parameter_values: dict | None = None,
         deck_fixtures: list[dict] | None = None,
+        labware_paths: list[str | Path] | None = None,
     ) -> dict:
         """Run a protocol from upload through to a terminal state.
 
@@ -988,6 +1073,8 @@ class FlexController:
                 name. The same values are sent with the run, since a
                 mismatch would trigger re-analysis.
             deck_fixtures: Deck fixtures to register before uploading.
+            labware_paths: Custom labware definitions to send with the
+                protocol.
 
         Returns:
             The final run document.
@@ -1006,6 +1093,7 @@ class FlexController:
             csv_variable=csv_variable,
             parameter_values=parameter_values,
             deck_fixtures=deck_fixtures,
+            labware_paths=labware_paths,
         )
         self.assert_analysis_clean({"errors": verdict["errors"]})
 
@@ -1126,6 +1214,13 @@ def main(argv: list[str] | None = None) -> int:
         "--deck", help="JSON file holding the deck fixture list"
     )
     parser.add_argument(
+        "--labware",
+        action="append",
+        metavar="PATH",
+        help="custom labware definition, or a directory of them; "
+        "repeat for more than one",
+    )
+    parser.add_argument(
         "--params", help="JSON object of scalar runtime parameters"
     )
     parser.add_argument(
@@ -1169,6 +1264,7 @@ def main(argv: list[str] | None = None) -> int:
                 csv_variable=args.csv_variable,
                 parameter_values=parameter_values,
                 deck_fixtures=deck_fixtures,
+                labware_paths=args.labware,
             )
             print(json.dumps(verdict, indent=2, default=str))
             return 0 if verdict["passed"] else 1
@@ -1179,6 +1275,7 @@ def main(argv: list[str] | None = None) -> int:
             csv_variable=args.csv_variable,
             parameter_values=parameter_values,
             deck_fixtures=deck_fixtures,
+            labware_paths=args.labware,
         )
         print(json.dumps({"status": final.get("status")}, indent=2))
         return 0 if final.get("status") == "succeeded" else 1

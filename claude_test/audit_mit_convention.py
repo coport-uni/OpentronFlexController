@@ -31,6 +31,7 @@ known_verbs = {
     "assert",
     "build",
     "call",
+    "collect",
     "count",
     "create",
     "delete",
@@ -68,6 +69,7 @@ known_verbs = {
     "upload",
     "verify",
     "wait",
+    "write",
     "walk",
     "action",
 }

@@ -664,3 +664,370 @@ A second note: this host had no git identity at all, so the first
 commit attempt was refused. It is now set **repository-locally** to the
 value the previous commit used, `coport-uni <ohsungwoo@unist.ac.kr>`.
 Nothing was written to the global git configuration.
+
+---
+
+## Task 11: Conda environment on Windows, and the first verified real-device run
+
+Requested: build the `environment.yml` environment with Anaconda on the
+Windows host and prove it works; then verify communication with the real
+Flex by reading its serial number and model without moving it; then run
+the test protocol on the device following the layout in the protocol
+file, and confirm that no CSV is required.
+
+### Environment
+
+Neither conda nor Python was present on the Windows host. The operator
+chose **Miniconda** over the full Anaconda distribution, since
+`environment.yml` draws only on conda-forge.
+
+```
+$ winget install --id Anaconda.Miniconda3 --silent
+Successfully installed          # -> C:\Users\swoho\miniconda3
+```
+
+`conda env create` first failed. The env file lists only conda-forge,
+but conda always appends the implicit `defaults` channel, whose
+Anaconda repositories are behind a Terms of Service gate:
+
+```
+CondaToSNonInteractiveError: Terms of Service have not been accepted for
+the following channels: repo.anaconda.com/pkgs/{main,r,msys2}
+```
+
+Rather than accept Anaconda's commercial terms for repositories this
+project never draws on, the `defaults` alias was pointed at conda-forge:
+
+```
+$ conda config --add channels conda-forge
+$ conda config --add default_channels https://conda.anaconda.org/conda-forge
+$ conda env create -f environment.yml          # succeeded
+```
+
+- [x] Install a conda distribution on the Windows host
+- [x] Create the `opentrons-flex` environment from `environment.yml`
+- [x] `conda init powershell` so `conda activate` works in a shell
+
+### Environment verification, offline
+
+Run inside the environment, with the output kept:
+
+```
+Python 3.12.13          # matches the version README records
+requests 2.34.2 · pytest 9.1.1 · ruff 0.16.3
+
+$ python -m pytest tests/ -q
+72 passed, 23 skipped in 4.75s
+  all 23 skips are tests/test_integration_dev_server.py, reason
+  "no robot-server development server on localhost:31950"
+
+$ ruff check .                 All checks passed!
+$ ruff format --check .        7 files already formatted
+$ python claude_test/audit_mit_convention.py
+  files audited : 7 / findings : 0
+$ python main.py --help        full option list printed
+```
+
+The transport path was exercised with no server listening: the
+pre-flight blocked before any upload, after the retry backoff ran
+1s -> 2s -> 4s, and both entry points exited 1 on a clean
+`TransportError`.
+
+- [x] Verify the environment offline; keep the real output
+
+### Real-device identity, read only
+
+Device reached over a direct Ethernet link. Only GET requests were
+issued -- `/health`, `/instruments`, `/modules`, `/deck_configuration`
+-- so nothing moved.
+
+```
+name           BionicsDEMO1
+robot_serial   FLXA3020260521001
+robot_model    OT-3 Standard          board FLEX_B2
+api / system   9.1.1 / v9.1.1         fw 69
+protocol API   2.15 - 2.29
+address        169.254.108.46:31950   mDNS FLXA3020260521001.local
+
+left       p1000_single_v3.6      P1KSV3620260422A12
+right      p1000_multi_v3.5       P1KMV3520260513A08
+extension  gripperV1.3            GRPV1320260521009
+
+heaterShakerModuleV1   HSV012026051414
+thermocyclerModuleV2   TCV2120260603A03
+absorbanceReaderV1     OPTMAA00088
+```
+
+Note for later work: this device has **no 96-channel pipette**, so the
+reference protocol `OD_Normalization.py` cannot run on it as written.
+
+- [x] Verify communication by reading serial number and model, no motion
+
+### Two blockers found by the analysis gate
+
+The first attempt was rejected, and the gate behaved exactly as spec
+section 5.2 requires -- no run was created:
+
+```
+result  : not-ok    errors : 1
+ExceptionInProtocolError [line 26]: FileNotFoundError: Labware
+"thermo_fisher_nunclon_sphera_96_well_u_bottom_174925" not found with
+version 1 in namespace "opentrons".
+```
+
+That definition is absent from Opentrons shared-data at both schema 2
+and schema 3, so it is **custom labware** (namespace `custom_beta`,
+version 2). The desktop app keeps custom definitions in its own store,
+which is why the protocol runs there and not over HTTP. `POST
+/protocols` accepts several `files` parts, and sending the definition
+alongside the protocol resolved it -- `load_labware` picked up the
+version-2 definition without an explicit `version=` argument.
+
+Second, the protocol loads `magneticBlockV1` at C1 while the robot had
+`cutoutC1` set to `singleLeftSlot`. The operator confirmed the block is
+physically installed, so the deck configuration was corrected to match
+the protocol. The original was saved first and remains reversible.
+
+- [x] Supply the custom labware definition with the protocol
+- [x] Align `cutoutC1` with the protocol's magnetic block
+
+### The run
+
+Operator present, e-stop within reach, deck checked against the plan
+before the go-ahead was given.
+
+```
+robot         BionicsDEMO1 at 169.254.108.46
+run id        60451ab1-b67d-4cf7-811a-c143a018bd23
+final status  succeeded
+started       2026-08-18T07:14:50.404521Z
+completed     2026-08-18T07:16:16.360100Z
+errors        0        failed commands  0
+
+27 commands, all succeeded: home, 3 loadModule, 7 loadLabware,
+loadPipette, closeLabwareLatch, 3 comment, 2 pickUpTip, 2 aspirate,
+2 dispense, 2 moveToAddressableArea, 2 dropTipInPlace, openLabwareLatch
+```
+
+- [x] Run the protocol on the real device, layout as the file gives it
+- [x] Confirm no CSV is needed -- the robot reported
+      `runTimeParameters: []`, because the protocol declares no
+      `add_parameters`. This matches the desktop app, which does not
+      ask for one.
+
+### Caveats recorded honestly
+
+1. **The upload did not go through production code.**
+   `FlexController.upload_protocol` sends a single file, so it cannot
+   carry a custom labware definition. The upload used a scratchpad
+   harness; the deck write, analysis gate, run creation, play and
+   monitoring all used the production controller's public methods.
+   `python main.py` still cannot run this protocol. Task 12 closes this.
+2. **`--params "{}"` is mandatory** for this protocol. `main.py`
+   defaults to the reference protocol's `{"dry_run": True,
+   "waste_type": 1}`, which this protocol does not declare.
+3. **The run records were not written at run time**, because the
+   scratchpad harness never called `save_artifact`. They were retrieved
+   from the robot afterwards and written through the production method:
+   `artifacts/run.json`, `artifacts/commands.json`, `analysis.json`,
+   and the earlier rejection kept as
+   `analysis_rejected_custom_labware.json`.
+4. **The robot's own logs are not collected by this tool at all.** All
+   seven were pulled by hand into `artifacts/` (110 MB); `artifacts/`
+   is gitignored.
+5. The deck configuration on the robot is left changed at `cutoutC1`.
+   Reverting it is required if the magnetic block is removed.
+
+### Open
+
+`gh auth login` is still outstanding on this host, so no GitHub issue
+could be created for this task. It needs a browser or a pasted token
+and cannot be completed non-interactively.
+
+```
+$ gh auth status
+You are not logged into any GitHub hosts. To log in, run: gh auth login
+```
+
+- [ ] `gh auth login` — operator, interactive
+- [ ] Open the issue and the PR for Task 11 and Task 12 once logged in
+
+---
+
+## Task 12: Run a custom-labware protocol from `main.py` on a real device
+
+> Proposed. Awaiting the operator's confirmation before work starts.
+
+Requested: make the protocol runnable with a plain `python` command, and
+write the real-device commands into `README.md` and `main.py`.
+
+Task 11 proved the protocol runs on `BionicsDEMO1`, but only through a
+scratchpad harness, because `upload_protocol` sends one file and the
+protocol needs a custom labware definition alongside it. This task moves
+that capability into the tool.
+
+### Scope
+
+- [x] `flex_controller.py`: give `upload_protocol` a `labware_paths`
+      argument so `POST /protocols` carries the protocol together with
+      any number of custom labware definitions. Thread it through
+      `verify_only` and `execute` so both entry points can use it.
+- [x] `main.py`: add `--labware`, repeatable, accepting either a
+      definition file or a directory of them; pass it to the upload and
+      show what was sent in the Upload stage.
+- [x] `configs/`: add a deck fixture list for this protocol, so the
+      magnetic block at C1 and the waste chute at D3 can be applied with
+      `--deck` instead of by hand.
+- [x] `README.md`: a real-device section giving the exact commands --
+      the read-only identity check, the dry run, and the run -- with
+      real output.
+- [x] `ruff check .` and `ruff format --check .` clean; `pytest` green,
+      with new tests covering the multi-file upload.
+- [x] Verify on `BionicsDEMO1` with the operator present, and keep the
+      output for the PR (spec section 5.1).
+
+### Notes
+
+- The protocol file was renamed `TestMover.py` -> `TestSingletip.py`
+  during Task 11; the README commands must use the current name.
+- `--params "{}"` stays mandatory for this protocol. Whether `main.py`
+  should stop defaulting to the reference protocol's parameters is a
+  separate question, deliberately left out of this task.
+
+### Progress
+
+`gh auth login` (left open by Task 11) has since been completed on this
+host, so this task has a GitHub issue: #10.
+
+```
+$ gh auth status
+github.com
+  * Logged in to github.com account coport-uni (keyring)
+```
+
+- [x] `main.py`: write the real-device command into the module
+      docstring. The example now names `protocols/TestSingletip.py`, the
+      device address and `--expect-name BionicsDEMO1`, `--labware
+      protocols/labware`, and the empty `--csv` and `--params "{}"` that
+      this protocol needs, with notes on the read-only deck and the
+      PowerShell empty-argument trap. (issue #10)
+
+Documentation only, so verification was a check of every claim against
+the code and the device record, per spec section 5.1:
+
+```
+$ python -c "...build_parser().parse_args([the documented arguments])"
+profile     : robot | host: 169.254.108.46 | expect: BionicsDEMO1
+protocol    : protocols/TestSingletip.py
+csv         : '' -> upload skipped: True
+params      : {}
+labware sent: 4 definitions from protocols/labware
+deck default: None -> robot profile reads only
+
+$ ruff check main.py          All checks passed!
+$ ruff format --check main.py  1 file already formatted
+```
+
+The PowerShell claim was measured rather than recalled:
+
+```
+PS> python -c "import sys; print(sys.argv[1:])" --csv "" --params "{}"
+['--csv', '--params', '{}']          # the empty argument is dropped
+PS> python -c "import sys; print(sys.argv[1:])" --csv='' --params '{}'
+['--csv=', '--params', '{}']         # argparse reads this as ''
+```
+
+Left open: the documented `--labware protocols/labware` sends all four
+definitions in that directory, where only
+`thermo_fisher_nunclon_sphera_96_well_u_bottom_174925` is needed. The
+verified Task 11 upload sent that one file alone, so the directory form
+is still unproven on the device.
+
+Also noticed, outside this change: `main.py` still defaults
+`default_protocol`, `default_csv`, and `reference_deck` to
+`OD_Normalization.py`, `data/od_normalization.csv`, and
+`configs/deck_od_normalization.json`, all of which are deleted in the
+working tree. The `--profile dev` examples at the top of the same
+docstring therefore no longer run as written.
+
+### Verification
+
+Confirmed by the operator before work started: `--labware` takes files
+and directories both; a deck configuration file is wanted; verification
+stops at `--verify-only`.
+
+Software checks, run in the conda environment:
+
+```
+$ python -m pytest tests/ -q
+77 passed, 23 skipped in 4.83s     # was 72 passed; five new tests
+
+$ ruff check .                     All checks passed!
+$ ruff format --check .            7 files already formatted
+$ python claude_test/audit_mit_convention.py
+  files audited : 7 / findings : 0
+```
+
+The audit first reported `collect_labware_files` and `write_definition`
+as non-verbs. Both are verbs; the auditor's vocabulary simply lacked
+them, and its own comment says the list is "the vocabulary the codebase
+uses ... reported for a human to judge". `collect` and `write` were
+added to it rather than the functions renamed into something worse.
+
+`collect_labware_files` became a **static method** rather than a
+module-level function. Spec section 4.1 fixes the externally exposed
+entry points at the class and one CLI function, so a public module-level
+helper would have been a third. That took the method count from 32 to
+33, which `test_method_count_is_the_documented_one` deliberately fails
+on until the addition is argued for in
+`docs/transport_layer_review.md`; that argument is now recorded there.
+
+On the device, operator present, `BionicsDEMO1`:
+
+```
+$ python main.py --profile robot --host FLXA3020260521001.local \
+    --expect-name BionicsDEMO1 --protocol protocols/TestSingletip.py \
+    --csv "" --params "{}" --deck configs/deck_testsingletip.json \
+    --labware protocols/labware --verify-only --no-plan
+
+3. Upload
+  custom labware   corning_3590_96_wellplate_360ul_flat.json
+  custom labware   costar_7007_96_wellplate_330ul_u_bottom.json
+  custom labware   spl_96_well_cell_culture_plate_330ul_flat_bottom (1).json
+  custom labware   thermo_fisher_nunclon_sphera_96_well_u_bottom_174925 (1) (1).json
+  protocol         TestSingletip.py
+
+4. Analysis
+  status  completed     result  ok
+  planned commands  27   errors  0
+  Gate passed: the robot accepted this protocol.
+
+Done: verified, nothing was run
+exit=0
+```
+
+The first attempt failed, and the failure is worth keeping. The deck
+file was written without `opentronsModuleSerialNumber` on the module
+fixtures, and the robot refused it:
+
+```
+PUT /deck_configuration returned 422
+InvalidDeckConfiguration: Invalid deck configuration.
+```
+
+The file was rebuilt from what the robot itself reports, which is now
+what `README.md` tells the reader to do.
+
+### Not verified
+
+Per the operator's decision, verification stopped at the analysis gate.
+**`main.py` has not driven a full run through the `--labware` path.**
+The protocol has run on this device (Task 11), but that run's upload
+used a scratchpad harness rather than the code changed here. `README.md`
+says so in the same words.
+
+### Open
+
+Still blocked on `gh auth login`, so Task 11 and Task 12 have no GitHub
+issue and no pull request. The branch `feature/custom-labware-upload`
+stays local until that is done.
