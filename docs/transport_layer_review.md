@@ -68,3 +68,22 @@ documented constant rather than merely staying under a limit, so the
 next method added fails the suite and forces this file to be revisited.
 That test also requires this document to exist while the count is over
 thirty.
+
+## 2026-08-18 — `collect_labware_files`, count 32 to 33
+
+A protocol that loads custom labware needs those definitions uploaded
+with it, so `upload_protocol` gained a `labware_paths` argument and the
+path resolution behind it needed a home. Resolving a file-or-directory
+list is pure and touches neither the network nor instance state, so the
+natural place was a module-level function.
+
+Spec section 4.1 rules that out: the only entry points exposed outside
+this module are the class and one CLI function. A public module-level
+helper would be a third. It became a static method instead, which keeps
+the module surface exactly as the spec fixes it and costs one method.
+
+This does not move the split any closer. The new method is not
+transport, not orchestration, and not state; it would sit on neither
+side of a controller/transport boundary and would simply follow
+`upload_protocol` wherever that goes. The triggers listed above are
+unchanged, and the count remains well under forty.

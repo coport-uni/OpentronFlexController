@@ -303,12 +303,21 @@ def test_defaults_target_the_reference_protocol():
 
     assert args.profile == "dev"
     assert Path(args.protocol).name == "OD_Normalization.py"
-    assert Path(args.csv).name == "od_normalization.csv"
     assert args.verify_only is False
 
 
+def test_no_data_file_is_sent_unless_one_is_named():
+    """Most protocols declare no file parameter, so none is the default.
+
+    Defaulting to the reference protocol's CSV meant every other
+    protocol had to switch it off, and a shell that swallows an empty
+    argument turned that into a failure the operator could not read.
+    """
+    assert main.build_parser().parse_args([]).csv is None
+
+
 def test_the_csv_can_be_switched_off():
-    """A protocol without a file parameter needs no CSV."""
+    """An empty argument still reads as no CSV, as the docs promised."""
     args = main.build_parser().parse_args(["--csv", ""])
 
     assert args.csv == ""

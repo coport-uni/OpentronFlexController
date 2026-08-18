@@ -172,6 +172,69 @@ Everything from here on assumes that environment is active. Your shell
 prompt will usually show `(opentrons-flex)`.
 
 <details>
+<summary><b>Windows: <code>conda</code> not found in PowerShell</b></summary>
+
+```
+PS> conda --version
+conda : The term 'conda' is not recognized as the name of a cmdlet,
+function, script file, or operable program.
+```
+
+The message names the wrong culprit, and the obvious reaction — go and
+edit `PATH` — leads nowhere. `conda init powershell` deliberately puts
+nothing on `PATH`. It writes a hook into your PowerShell profile
+instead, and a profile is a script. If the execution policy forbids
+scripts, the profile never loads and the hook never runs.
+
+So interrogate the policy, not the `PATH`:
+
+```powershell
+Get-ExecutionPolicy -List
+```
+
+Every scope reading `Undefined` means the effective policy is
+`Restricted` — the Windows client default — and a `Restricted` shell
+refuses its own profile on the way up:
+
+```
+. : File ...\WindowsPowerShell\profile.ps1 cannot be loaded because
+running scripts is disabled on this system.
+    + FullyQualifiedErrorId : UnauthorizedAccess
+```
+
+Allow local scripts for your own account. No administrator rights are
+needed, and it does not weaken the check on downloaded ones:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Open a new window and confirm:
+
+```powershell
+Get-ExecutionPolicy      # RemoteSigned
+conda --version          # conda 26.5.3
+```
+
+If your machine is locked down and the policy cannot be changed, note
+that calling `conda.exe` by its full path is only half a workaround.
+One-shot commands work; activation does not, because activation has to
+edit the shell it is called from:
+
+```
+CondaError: Run 'conda init' before 'conda activate'
+```
+
+Call the environment's interpreter directly instead, and skip
+activation altogether:
+
+```
+%USERPROFILE%\miniconda3\envs\opentrons-flex\python.exe main.py --profile dev
+```
+
+</details>
+
+<details>
 <summary><b>What the environment contains, and why</b></summary>
 
 | Package | Why |
@@ -438,8 +501,9 @@ python main.py [options]
 | `--verify-only` | Stop after the check. Nothing moves |
 | `--step` | Walk the plan, one Enter per step |
 | `--protocol <file>` | Your `.py`. Defaults to the reference protocol |
-| `--csv <file>` | Data file for a protocol that takes one. `--csv ""` if not |
+| `--csv <file>` | Data file, only for a protocol that declares one. Nothing is sent without it |
 | `--deck <file>` | Deck fixture list. `--deck ""` to leave the deck alone |
+| `--labware <path>` | Custom labware definition, or a folder of them. Repeatable |
 | `--no-plan` | Skip the plan listing, which can be long |
 | `--tick <seconds>` | How often to poll while running |
 | `--artifact-dir <dir>` | Where to save the analysis and run records |
@@ -464,8 +528,9 @@ python main.py --profile dev --verify-only --no-plan          # exit 0
 python main.py --profile dev --no-plan                        # exit 0
 ```
 
-**Use your own protocol.** `--csv ""` says it takes no data file, `--deck ""`
-says leave the deck configuration alone.
+**Use your own protocol.** `--deck ""` says leave the deck configuration
+alone. The `--csv ""` below is how these runs were recorded; the flag can
+now be omitted entirely.
 
 ```bash
 python main.py --profile dev --verify-only --no-plan \
@@ -538,19 +603,99 @@ python main.py --help
 
 ### Running on a real Flex
 
-Supply the robot's address, a protocol, and a CSV. Everything else has a
-safe default.
+Supply the robot's address and a protocol. Everything else has a safe
+default, and no data file is sent unless you name one.
 
 ```bash
 conda activate opentrons-flex
 
 python main.py --profile robot --host 192.168.1.50 \
   --expect-name flex-lab-01 \
-  --protocol my_protocol.py --csv my_data.csv \
+  --protocol my_protocol.py \
   --verify-only                       # dry run first: nothing moves
 ```
 
 Drop `--verify-only` when the dry run looks right.
+
+#### A worked example, run on real hardware
+
+This is the exact command used against `BionicsDEMO1` on 2026-08-18, with
+the operator present. `protocols/TestSingletip.py` moves 100 µL from an
+EP tube and 100 µL from a reservoir into the same plate well.
+
+```bash
+conda activate opentrons-flex
+
+python main.py --profile robot --host FLXA3020260521001.local \
+  --expect-name BionicsDEMO1 \
+  --protocol protocols/TestSingletip.py \
+  --csv "" --params "{}" \
+  --deck configs/deck_testsingletip.json \
+  --labware protocols/labware \
+  --verify-only --no-plan                                     # exit 0
+```
+
+```
+3. Upload
+  custom labware           corning_3590_96_wellplate_360ul_flat.json
+  custom labware           costar_7007_96_wellplate_330ul_u_bottom.json
+  custom labware           spl_96_well_cell_culture_plate_330ul_flat_bottom (1).json
+  custom labware           thermo_fisher_nunclon_sphera_96_well_u_bottom_174925 (1) (1).json
+  protocol                 TestSingletip.py
+
+4. Analysis
+  status                   completed
+  result                   ok
+  planned commands         27
+  errors                   0
+  Gate passed: the robot accepted this protocol.
+```
+
+Drop `--verify-only` to run it. Four details in that command are easy to
+get wrong.
+
+**`--labware` is what makes custom labware work.** The desktop
+application keeps custom definitions in a store of its own, so a protocol
+that runs there fails over HTTP with `FileNotFoundError: Labware "..."
+not found`. `POST /protocols` takes the definitions as extra file parts,
+and `--labware` is how they get there. Point it at a folder and every
+`*.json` inside goes up; point it at a single file and only that one
+does. Repeat the flag for more than one source. Sending a definition the
+protocol never loads is harmless.
+
+**No data file is sent unless `--csv` names one.** A protocol needs a CSV
+only if it declares one with `parameters.add_csv_file`; a protocol with no
+`add_parameters` at all reports `runTimeParameters: []`, and the desktop
+application does not ask for a CSV either. The `--csv ""` in the command
+above is what was run on the day, when the console still defaulted to the
+reference protocol's CSV; it is no longer needed -- and dropping it also
+avoids Windows PowerShell, which swallows an empty argument and leaves
+argparse complaining that `--csv` expects one.
+
+**`--params "{}"` is required for a protocol with no parameters.**
+Without it, `main.py` falls back to the reference protocol's
+`{"dry_run": true, "waste_type": 1}`, which a protocol that never
+declared them rejects.
+
+**The deck file belongs to one machine.** Module fixtures carry
+`opentronsModuleSerialNumber`, and the robot answers `422
+InvalidDeckConfiguration` when they are missing or belong to another
+device. Read yours off the robot and edit from there:
+
+```bash
+curl -H "Opentrons-Version: 3" \
+  http://FLXA3020260521001.local:31950/deck_configuration
+```
+
+Writing a deck configuration asserts what is **physically bolted on**.
+`configs/deck_testsingletip.json` claims a magnetic block at C1 and a
+waste chute at D3; if yours are not installed, do not send it — pass
+`--deck ""` and set the deck from the touchscreen instead.
+
+> **On addressing.** A Flex on a direct Ethernet link takes a link-local
+> address that changes between sessions. The mDNS name is stable, so
+> prefer `--host FLXA3020260521001.local` over the IPv4 address you saw
+> last time. Substitute your own robot's serial.
 
 > ⚠️ **Read [`docs/real_device_procedure.md`](docs/real_device_procedure.md)
 > first.** It covers the physical checks no software can make, the
@@ -572,7 +717,17 @@ fails mid-motion instead.
 The prompt asks for the robot's name because muscle memory types "yes",
 and it cannot type the name of a machine you have not looked at.
 
-**No hardware has ever run this.** TC-12 and TC-13 are open.
+**Verified on hardware.** On 2026-08-18 `protocols/TestSingletip.py` ran
+on `BionicsDEMO1` (serial `FLXA3020260521001`, system `v9.1.1`) with the
+operator present: 27 commands, all `succeeded`, zero errors, 86 seconds.
+The records are in `artifacts/`.
+
+Two things about that run are worth stating plainly. The **upload** did
+not go through `main.py` — at the time, `upload_protocol` could send only
+one file, so a separate harness carried the custom labware definition;
+`--labware` is what closed that gap afterwards. And while the `--labware`
+path above has been verified through the analysis gate on the same
+device, **the tool has not yet driven a full run with it**.
 
 ### The two profiles
 

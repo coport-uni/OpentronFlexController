@@ -38,9 +38,11 @@ expected_attempts_on_client_error = 1
 # Spec section 4.3 rule 5. Thirty is where the rule asks us to
 # reconsider splitting out the transport layer; the class stands above
 # it since get_instruments and get_modules were added for the operator
-# console. The reconsideration is docs/transport_layer_review.md.
+# console, and again since collect_labware_files joined it rather than
+# becoming a second module-level entry point, which spec section 4.1
+# forbids. The reconsideration is docs/transport_layer_review.md.
 review_threshold = 30
-documented_method_count = 32
+documented_method_count = 33
 
 
 def load_fixture(name: str) -> dict:
@@ -60,6 +62,9 @@ class RecordingTransport:
 
     Attributes:
         calls: One entry per call, holding the method and path.
+        payloads: The keyword arguments of each call, so a test can
+            inspect what was put on the wire and not merely which
+            endpoint was reached.
         responses: Queued bodies or exceptions, consumed in order. The
             last entry repeats once the queue is down to it, so a retry
             test can declare a single persistent fault.
@@ -67,6 +72,7 @@ class RecordingTransport:
 
     def __init__(self, responses: list) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.payloads: list[dict] = []
         self.responses = list(responses)
 
     def __call__(self, method: str, path: str, **kwargs) -> dict:
@@ -75,7 +81,7 @@ class RecordingTransport:
         Args:
             method: HTTP verb the controller asked for.
             path: Path the controller asked for.
-            **kwargs: Ignored; accepted so the signature matches.
+            **kwargs: Recorded on ``payloads``.
 
         Returns:
             The queued response body.
@@ -84,6 +90,7 @@ class RecordingTransport:
             BaseException: If the queued entry is an exception.
         """
         self.calls.append((method, path))
+        self.payloads.append(kwargs)
         answer = (
             self.responses.pop(0)
             if len(self.responses) > 1
@@ -181,6 +188,96 @@ def test_upload_protocol_parses_ids(controller, tmp_path):
 
     assert protocol_id == "protocol-1"
     assert analysis_id == "analysis-1"
+
+
+def write_definition(directory: Path, name: str) -> Path:
+    """Write one placeholder labware definition.
+
+    Args:
+        directory: Folder to write into; created if absent.
+        name: File name, including the extension.
+
+    Returns:
+        The path written.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    destination = directory / name
+    destination.write_text(json.dumps({"namespace": "custom_beta"}), "utf-8")
+    return destination
+
+
+def test_collect_labware_files_expands_a_directory(tmp_path):
+    """Naming the folder is enough; its definitions are found in order."""
+    folder = tmp_path / "labware"
+    write_definition(folder, "b_plate.json")
+    write_definition(folder, "a_plate.json")
+    (folder / "notes.txt").write_text("not a definition", encoding="utf-8")
+
+    found = FlexController.collect_labware_files([folder])
+
+    assert [entry.name for entry in found] == ["a_plate.json", "b_plate.json"]
+
+
+def test_collect_labware_files_keeps_order_and_drops_repeats(tmp_path):
+    """A file named twice is uploaded once, in the position first given."""
+    first = write_definition(tmp_path, "first.json")
+    second = write_definition(tmp_path, "second.json")
+
+    found = FlexController.collect_labware_files([second, first, second])
+
+    assert [entry.name for entry in found] == ["second.json", "first.json"]
+
+
+def test_collect_labware_files_rejects_a_path_that_is_not_there(tmp_path):
+    """A mistyped path fails loudly rather than uploading nothing.
+
+    Silently sending no definition would surface later as the robot's
+    own "labware not found", which points at the protocol instead of at
+    the argument that was actually wrong.
+    """
+    with pytest.raises(FileNotFoundError):
+        FlexController.collect_labware_files([tmp_path / "absent"])
+
+
+def test_upload_protocol_sends_custom_labware_beside_the_protocol(
+    controller, tmp_path
+):
+    """The definitions share the one multipart field with the protocol.
+
+    robot-server takes the protocol and its custom labware as repeated
+    ``files`` parts. Without them the analysis fails on a labware the
+    desktop application resolves from its own store.
+    """
+    protocol = tmp_path / "protocol.py"
+    protocol.write_text("# empty", encoding="utf-8")
+    folder = tmp_path / "labware"
+    write_definition(folder, "custom_plate.json")
+    transport = RecordingTransport([load_fixture("protocol_upload.json")])
+    controller._request = transport
+
+    controller.upload_protocol(protocol, labware_paths=[folder])
+
+    parts = transport.payloads[0]["files"]
+    assert [field for field, _ in parts] == ["files", "files"]
+    assert [entry[0] for _, entry in parts] == [
+        "protocol.py",
+        "custom_plate.json",
+    ]
+
+
+def test_upload_protocol_sends_the_protocol_alone_by_default(
+    controller, tmp_path
+):
+    """A protocol needing no custom labware uploads exactly as before."""
+    protocol = tmp_path / "protocol.py"
+    protocol.write_text("# empty", encoding="utf-8")
+    transport = RecordingTransport([load_fixture("protocol_upload.json")])
+    controller._request = transport
+
+    controller.upload_protocol(protocol)
+
+    parts = transport.payloads[0]["files"]
+    assert [entry[0] for _, entry in parts] == ["protocol.py"]
 
 
 def test_get_commands_follows_pagination(controller):

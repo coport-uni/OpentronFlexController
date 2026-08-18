@@ -21,12 +21,30 @@ Walk the planned steps one at a time:
 
     python main.py --profile dev --verify-only --step
 
-Against a real device, supplying only its address, a protocol, and a CSV.
-The deck is read rather than written, and the run is confirmed by typing
-the robot's own name:
+Against a real device, running the verification protocol
+``protocols/TestSingletip.py``. It loads a custom labware definition,
+so that definition travels with it under ``--labware``; it declares no
+runtime parameters, so an empty ``--params`` object clears the
+reference protocol's defaults. The run is confirmed by typing the
+robot's own name:
 
-    python main.py --profile robot --host 192.168.1.50 \
-      --protocol my_protocol.py --csv my_data.csv
+    python main.py --profile robot --host 169.254.108.46 \
+      --expect-name BionicsDEMO1 \
+      --protocol protocols/TestSingletip.py \
+      --labware protocols/labware \
+      --params "{}"
+
+No data file is involved. This console sends one only when ``--csv``
+names it, which a protocol needs only if it declares a file parameter
+with ``parameters.add_csv_file``.
+
+Add ``--verify-only`` to stop at the analysis gate, which is the dry
+run to do before letting the machine move.
+
+The deck is read, not written, so the robot must already show the
+magnetic block at C1 and the waste chute at D3. Where it does not,
+and the fixtures are physically installed, write the layout once
+with ``--deck configs/deck_testsingletip.json``.
 
 See docs/real_device_procedure.md before doing that.
 """
@@ -51,7 +69,6 @@ from flex_controller import (
 repository_root = Path(__file__).parent
 
 default_protocol = repository_root / "protocols" / "OD_Normalization.py"
-default_csv = repository_root / "data" / "od_normalization.csv"
 reference_deck = repository_root / "configs" / "deck_od_normalization.json"
 default_parameters = {"dry_run": True, "waste_type": 1}
 
@@ -686,8 +703,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--csv",
-        default=str(default_csv),
-        help="CSV for the file-type parameter; pass an empty string to omit",
+        default=None,
+        help=(
+            "data file for a protocol that declares a file parameter. "
+            "Nothing is sent unless you name one"
+        ),
     )
     parser.add_argument(
         "--deck",
@@ -696,6 +716,15 @@ def build_parser() -> argparse.ArgumentParser:
             "deck fixture list to WRITE to the robot. Omitted, the dev "
             "profile applies the reference layout and the robot profile "
             "leaves the deck alone. Pass an empty string to read only"
+        ),
+    )
+    parser.add_argument(
+        "--labware",
+        action="append",
+        metavar="PATH",
+        help=(
+            "custom labware definition to send with the protocol, or a "
+            "directory of them; repeat for more than one"
         ),
     )
     parser.add_argument(
@@ -792,8 +821,13 @@ def main(argv: list[str] | None = None) -> int:
             file_id = controller.upload_data_file(args.csv, "csv_data")
             print_row("csv", Path(args.csv).name)
             print_row("file id", file_id)
+        definitions = FlexController.collect_labware_files(args.labware)
+        for definition in definitions:
+            print_row("custom labware", definition.name)
         protocol_id, analysis_id = controller.upload_protocol(
-            args.protocol, parameter_values=parameters
+            args.protocol,
+            parameter_values=parameters,
+            labware_paths=args.labware,
         )
         print_row("protocol", Path(args.protocol).name)
         print_row("protocol id", protocol_id)
