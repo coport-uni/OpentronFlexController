@@ -1,0 +1,27 @@
+line-length = 80
+indent-width = 4
+
+extend-exclude = [
+    # These protocols carry deliberate faults -- an uncompilable file, an
+    # undefined labware, a slot collision -- so that the analysis gate
+    # can be shown to catch them. Linting them defeats their purpose.
+    "tests/protocols",
+    # The reference protocol is vendored verbatim from the Opentrons
+    # Protocol Library (spec section 1.3). Reformatting it would make it
+    # something other than the protocol under test.
+    "protocols",
+    # Third-party sources, carried as a submodule.
+    "external",
+]
+
+[format]
+indent-style = "space"
+quote-style = "double"
+
+[lint]
+select = ["E", "F", "W", "I", "N"]
+
+[lint.per-file-ignores]
+# CLAUDE.md section 8 waives the 80-column limit for claude_test/, which
+# is a scratch area where strict formatting slows diagnosis.
+"claude_test/*" = ["E501"]

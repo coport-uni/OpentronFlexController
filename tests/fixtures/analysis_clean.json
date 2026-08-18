@@ -1,0 +1,45 @@
+{
+  "data": {
+    "id": "analysis-1",
+    "status": "completed",
+    "result": "ok",
+    "errors": [],
+    "commands": [
+      {
+        "id": "17977224-c639-4d33-89cd-1c4ff72924e5",
+        "createdAt": "2026-08-13T01:43:57.842214Z",
+        "commandType": "home",
+        "key": "50c7ae73a4e3f7129874f39dfb514803",
+        "status": "succeeded",
+        "params": {},
+        "result": {},
+        "startedAt": "2026-08-13T01:43:57.844793Z",
+        "completedAt": "2026-08-13T01:43:57.846771Z",
+        "notes": [],
+        "commandAnnotationIds": []
+      },
+      {
+        "id": "e81f86b0-30ca-4950-8352-8f04b1305d24",
+        "createdAt": "2026-08-13T01:43:57.863641Z",
+        "commandType": "loadModule",
+        "key": "8511b05ba5565bf0e6dcccd800e2ee23",
+        "status": "succeeded",
+        "params": {
+          "model": "thermocyclerModuleV2",
+          "location": {
+            "slotName": "B1"
+          }
+        },
+        "result": {
+          "moduleId": "bd7e7d8f-44e8-46d9-b589-7f8d108ddb5f",
+          "model": "thermocyclerModuleV2",
+          "serialNumber": "fake-serial-number-7a36938b-64fd-4173-b7b3-e72542bc0161"
+        },
+        "startedAt": "2026-08-13T01:43:57.864047Z",
+        "completedAt": "2026-08-13T01:43:57.867999Z",
+        "notes": [],
+        "commandAnnotationIds": []
+      }
+    ]
+  }
+}
