@@ -310,3 +310,40 @@ what was borrowed from which repository.
   CLAUDE.md §2 specifies `lower_case` constants, against PEP 8 and
   against the CommonClaude table it derives from. The project file wins
   per §1, and the code follows it.
+
+---
+
+## Task 6: Merge the branch into main
+
+**Date**: 2026-08-13
+**Pull Request**: #2, merged as `a6cc599`
+**Closes**: #1, #4, #5
+
+### Checklist
+
+- [x] Re-verify on the working tree before any git operation (§5.1)
+- [x] Confirm the integration suite ran rather than skipped
+- [x] Fix what the verification caught
+- [x] Bring the PR title and body up to date with the whole branch
+- [x] State TC-12 and TC-13 as NOT VERIFIED in the PR
+- [x] Merge with a merge commit, preserving the six commits
+- [x] Delete the branch, local and remote
+- [x] Confirm `main` carries the work and the three issues closed
+
+### Outcome notes
+
+- **The verification gate earned its keep at the last moment.** The audit
+  script had been committed in the previous task, which put it under
+  `git ls-files`, so the next run audited it and reported five findings
+  against itself. Both causes were in the checker: `check` and `find`
+  were missing from the verb vocabulary, and the CLAUDE.md §8 docstring
+  waiver was applied to presence but not to the Google sections, which
+  penalised a voluntary one-line docstring while excusing none at all.
+  Fixed in `e01d4ee`, then the whole gate was re-run from the start
+  rather than resumed.
+- **The PR body was stale and would have breached §15.2.** It described
+  the first commit only; five more had landed and the suite had grown
+  from 52 tests to 84. Rewritten against a verification run performed
+  immediately before the merge.
+- **§15.3 was not satisfied and this is recorded, not hidden.** The PR
+  merged 7492 lines across 42 files against guidance of 400.

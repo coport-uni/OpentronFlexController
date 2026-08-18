@@ -140,6 +140,31 @@ than rediscovered. Format and categories follow CLAUDE.md §10.
   code holds but never prints is an error the operator does not have.
   (from ToDo#1 E)
 
+**A branch that collects issues becomes a PR nobody can review**
+- **Problem**: One pull request merged 7492 lines across 42 files, about
+  nineteen times the 400-line guidance of CLAUDE.md §15.3.
+- **Cause**: Work kept being added to a branch that was already open.
+  Conventions, controller, console, and documentation were four
+  separable deliverables tracked under three separate issues, but each
+  new task landed on the same branch because it was there.
+- **Fix**: None available after the fact -- splitting retroactively would
+  discard the review history attached to the pull request. Recorded in
+  the pull request body instead.
+- **Rule**: Always cut a fresh branch when a new issue is opened; a
+  branch serving more than one issue is already too large.
+  (from ToDo#6)
+
+**A committed checker starts checking itself**
+- **Problem**: The convention audit passed with zero findings, then
+  reported five against its own file on the very next run.
+- **Cause**: The script had just been committed, so `git ls-files` began
+  listing it and it entered its own audit set.
+- **Fix**: Fixed the two real gaps it exposed in itself -- a short verb
+  vocabulary and a waiver applied inconsistently.
+- **Rule**: Always re-run a self-referential tool after committing it;
+  the run that matters is the first one where it can see itself.
+  (from ToDo#6)
+
 ## §5. Environment Specifics
 
 **robot-server needs libsystemd headers before `make setup`**
