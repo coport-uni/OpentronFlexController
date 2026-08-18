@@ -297,12 +297,22 @@ def test_a_failure_carrying_no_detail_still_reports_its_summary():
 # ---- Argument handling ------------------------------------------------
 
 
-def test_defaults_target_the_reference_protocol():
-    """Running the console bare should do the documented thing."""
-    args = main.build_parser().parse_args([])
+def test_the_protocol_has_to_be_named():
+    """Which protocol runs is the one thing the operator must choose.
+
+    A default here would let a bare command upload something the
+    operator never looked at, on a machine that then moves.
+    """
+    with pytest.raises(SystemExit):
+        main.build_parser().parse_args([])
+
+
+def test_naming_a_protocol_is_enough():
+    """Nothing else has to be supplied to reach the dev profile."""
+    args = main.build_parser().parse_args(["--protocol", "p.py"])
 
     assert args.profile == "dev"
-    assert Path(args.protocol).name == "OD_Normalization.py"
+    assert args.protocol == "p.py"
     assert args.verify_only is False
 
 
@@ -313,12 +323,14 @@ def test_no_data_file_is_sent_unless_one_is_named():
     protocol had to switch it off, and a shell that swallows an empty
     argument turned that into a failure the operator could not read.
     """
-    assert main.build_parser().parse_args([]).csv is None
+    args = main.build_parser().parse_args(["--protocol", "p.py"])
+
+    assert args.csv is None
 
 
 def test_the_csv_can_be_switched_off():
     """An empty argument still reads as no CSV, as the docs promised."""
-    args = main.build_parser().parse_args(["--csv", ""])
+    args = main.build_parser().parse_args(["--protocol", "p.py", "--csv", ""])
 
     assert args.csv == ""
 
@@ -506,18 +518,23 @@ def test_version_parsing_survives_odd_strings():
 # ---- The deck default, which is a safety decision ---------------------
 
 
-def test_deck_is_unset_by_default_so_a_profile_can_decide():
+def test_deck_is_unset_by_default():
     """`--deck` must not carry a path that would be written to a robot."""
-    assert main.build_parser().parse_args([]).deck is None
+    args = main.build_parser().parse_args(["--protocol", "p.py"])
+
+    assert args.deck is None
 
 
-def test_only_the_dev_profile_writes_a_deck_without_being_asked():
+def test_no_deck_is_written_unless_one_is_named():
     """Writing a deck asserts which fixtures are physically bolted on.
 
-    On a real robot that assertion may be false, and per
-    docs/spec_deviations.md D-1 the analysis will not object -- the run
-    fails mid-motion instead. So the reference layout is applied only on
-    the profile it describes.
+    That assertion may be false, and per docs/spec_deviations.md D-1 the
+    analysis will not object -- the run fails mid-motion instead. This
+    console cannot see the bench, so an omitted --deck reads the deck
+    and writes nothing, on either profile.
     """
-    assert "dev" in main.deck_written_by_default
-    assert "robot" not in main.deck_written_by_default
+    for profile in ("dev", "robot"):
+        args = main.build_parser().parse_args(
+            ["--protocol", "p.py", "--profile", profile]
+        )
+        assert args.deck is None

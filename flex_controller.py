@@ -1100,9 +1100,9 @@ class FlexController:
         if self.requires_confirmation:
             answer = input(
                 f"About to run {Path(protocol_path).name} on "
-                f"{self.host}. The robot will move. Type yes to proceed: "
+                f"{self.host}. The robot will move. Proceed? [y/N]: "
             )
-            if answer.strip().lower() != "yes":
+            if answer.strip().lower() not in ("y", "yes"):
                 raise RunError("operator declined the run")
 
         self.create_run(parameter_values=parameter_values)
