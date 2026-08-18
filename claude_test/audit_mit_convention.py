@@ -35,7 +35,9 @@ known_verbs = {
     "create",
     "delete",
     "describe",
+    "check",
     "execute",
+    "find",
     "format",
     "get",
     "health",
@@ -168,9 +170,13 @@ def check_file(rel):
                 problems.append(
                     (node.lineno, "docstring", f"{node.name}: none")
                 )
-            if doc and is_public(node.name) and not pytest_owned:
-                # pytest injects a test's parameters, so documenting them as caller
-                # arguments would describe a call that never happens.
+            if doc and is_public(node.name) and not pytest_owned and not waived:
+                # Two exemptions apply here. pytest injects a test's parameters, so
+                # documenting them as caller arguments would describe a call that
+                # never happens. And CLAUDE.md section 8 makes docstrings optional
+                # in claude_test/, which has to mean a voluntary one need not carry
+                # the full Google sections -- otherwise writing a one-line note is
+                # penalised while writing nothing is not.
                 args = [
                     a.arg
                     for a in node.args.args
