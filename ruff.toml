@@ -12,6 +12,11 @@ extend-exclude = [
     "protocols",
     # Third-party sources, carried as a submodule.
     "external",
+    # Ruff 0.16 began formatting Python inside Markdown fences. Documentation
+    # snippets are illustrations chosen for a reader, not shipped code, and
+    # letting the formatter rewrite them makes `ruff format --check .` pass or
+    # fail depending on which ruff the reader happens to have.
+    "*.md",
 ]
 
 [format]

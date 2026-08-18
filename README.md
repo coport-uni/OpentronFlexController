@@ -113,8 +113,8 @@ cannot produce one, the robot refuses, and nothing moves.
 
 ### A protocol is just a Python file
 
-Here is the working half of one — [`protocols/hello_flex.py`](protocols/hello_flex.py),
-minus its imports and metadata:
+Here is what [`protocols/hello_flex.py`](protocols/hello_flex.py) does, with
+its imports, docstring, and labels trimmed away so the shape is visible:
 
 ```python
 def run(protocol: protocol_api.ProtocolContext):
@@ -150,13 +150,62 @@ call, plus setup:
 
 ## 3. Try it in five minutes
 
-### Step 1 — install
+### Step 1 — set up the environment
+
+Conda is the recommended route: it pins the Python version too, so the
+environment you build matches the one these results came from.
 
 ```bash
-pip install requests
+conda env create -f environment.yml
+conda activate opentrons-flex
 ```
 
-That is the only runtime dependency.
+That reads [`environment.yml`](environment.yml) and takes about ten seconds.
+Check it worked:
+
+```bash
+python -V                                        # Python 3.12.13
+python -c "import requests; print(requests.__version__)"
+```
+
+Everything from here on assumes that environment is active. Your shell
+prompt will usually show `(opentrons-flex)`.
+
+<details>
+<summary><b>What the environment contains, and why</b></summary>
+
+| Package | Why |
+|---|---|
+| `python=3.12` | `CLAUDE.md` gives 3.10 as the floor; pinned so builds match |
+| `requests` | The tool's **only** runtime dependency |
+| `pytest` | To run the 84 tests |
+| `ruff` | Lint and format, at the 80-column limit this project uses |
+
+`pytest` and `ruff` are development tools, but the README asks you to run
+both, so they are in the file rather than somewhere you have to go find.
+
+</details>
+
+<details>
+<summary><b>Prefer pip and venv?</b></summary>
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install requests               # to run the tool
+pip install pytest ruff            # to run the tests and the linter
+```
+
+Needs Python 3.10 or newer. Only `requests` is required to drive a robot.
+
+</details>
+
+Removing it later is one command:
+
+```bash
+conda deactivate
+conda env remove -n opentrons-flex
+```
 
 ### Step 2 — start the simulator
 
@@ -183,13 +232,13 @@ curl -H "Opentrons-Version: 3" http://localhost:31950/health
 Safe to run at any time.
 
 ```bash
-python3 main.py --profile dev --verify-only
+python main.py --profile dev --verify-only
 ```
 
 ### Step 4 — run it
 
 ```bash
-python3 main.py --profile dev
+python main.py --profile dev
 ```
 
 You will see seven stages:
@@ -207,7 +256,7 @@ You will see seven stages:
 ### Step 5 — go one step at a time
 
 ```bash
-python3 main.py --profile dev --verify-only --step
+python main.py --profile dev --verify-only --step
 ```
 
 Press Enter to advance through the plan, `q` to stop.
@@ -290,7 +339,7 @@ all three:
 See all six for yourself:
 
 ```bash
-python3 claude_test/show_error_detection.py
+python claude_test/show_error_detection.py
 ```
 
 > ⚠️ **The last row is a trap worth knowing.** The robot analyses a
@@ -347,7 +396,7 @@ logic*. It says nothing about *physical outcomes*.
 ### Test results
 
 ```
-$ python3 -m pytest tests/ -q
+$ python -m pytest tests/ -q
 84 passed
 
 $ ruff check . && ruff format --check .
@@ -379,7 +428,7 @@ recorded with its evidence in
 ## 7. Command reference
 
 ```bash
-python3 main.py [options]
+python main.py [options]
 ```
 
 | Option | Effect |
@@ -396,6 +445,96 @@ python3 main.py [options]
 | `--artifact-dir <dir>` | Where to save the analysis and run records |
 
 Exit status: `0` success · `1` failure · `2` operator declined.
+
+### Worked examples
+
+Every command here was run in the conda environment above, against the
+development server, before being written down. Exit status follows each one.
+
+**Check the reference protocol without moving anything** — the safest thing
+you can run, and the one to reach for first.
+
+```bash
+python main.py --profile dev --verify-only --no-plan          # exit 0
+```
+
+**Run it.**
+
+```bash
+python main.py --profile dev --no-plan                        # exit 0
+```
+
+**Use your own protocol.** `--csv ""` says it takes no data file, `--deck ""`
+says leave the deck configuration alone.
+
+```bash
+python main.py --profile dev --verify-only --no-plan \
+  --protocol protocols/hello_flex.py --csv "" --deck ""       # exit 0
+
+python main.py --profile dev --no-plan \
+  --protocol protocols/hello_flex.py --csv "" --deck ""       # exit 0
+```
+
+**Feed it more data.** The 96-row CSV is the one that exhausts the first tip
+rack, so it is the only input that exercises the gripper.
+
+```bash
+python main.py --profile dev --verify-only --no-plan \
+  --csv data/od_normalization_96.csv                          # exit 0
+```
+
+**Watch a bad protocol get refused.** Note the exit status.
+
+```bash
+python main.py --profile dev --verify-only --no-plan \
+  --protocol tests/protocols/bad_labware.py --csv ""          # exit 1
+```
+
+**Step through the plan by hand** — Enter to advance, `q` to stop.
+
+```bash
+python main.py --profile dev --verify-only --step
+```
+
+**Batch mode**, when you want a JSON verdict instead of a live display.
+
+```bash
+python flex_controller.py --profile dev --verify-only \
+  --protocol protocols/OD_Normalization.py \
+  --csv data/od_normalization.csv \
+  --deck configs/deck_od_normalization.json \
+  --params '{"dry_run": true, "waste_type": 1}'               # exit 0
+```
+
+```json
+{
+  "passed": true,
+  "protocol_id": "dab22382-3b4e-45dc-b946-5866eaa727cb",
+  "analysis_id": "d19fd418-b68f-472c-9834-cb62668304cb",
+  "errors": [],
+  "command_count": 41
+}
+```
+
+**See all six faults being caught.**
+
+```bash
+python claude_test/show_error_detection.py                    # exit 0
+```
+
+**Everything the project checks about itself.**
+
+```bash
+python -m pytest tests/ -q                    # 84 passed
+ruff check . && ruff format --check .         # All checks passed!
+python claude_test/audit_mit_convention.py    # findings : 0
+```
+
+**Full option list.**
+
+```bash
+python main.py --help
+```
 
 ### The two profiles
 
@@ -430,6 +569,7 @@ There is no way to switch that off.
 
 | Path | What it is |
 |---|---|
+| `environment.yml` | The conda environment: Python, `requests`, `pytest`, `ruff` |
 | `main.py` | The console you will use — info, check, upload, watch |
 | `flex_controller.py` | The library. One class, `FlexController`, plus a batch CLI |
 | `protocols/hello_flex.py` | A small example protocol, 34 lines |
@@ -473,11 +613,18 @@ page. Details, including the query:
 
 ## Testing
 
+With the `opentrons-flex` environment active:
+
 ```bash
-python3 -m pytest tests/ -v          # 84 tests
+python -m pytest tests/ -v                    # 84 tests
 ruff check . && ruff format --check .
-python3 claude_test/audit_mit_convention.py
+python claude_test/audit_mit_convention.py
 ```
 
 The integration tests skip themselves when no simulator is listening, so
-the unit tests run anywhere.
+the unit tests run anywhere. To prove they were not silently skipped, run
+that file on its own — it should report 23 passed, not 23 skipped:
+
+```bash
+python -m pytest tests/test_integration_dev_server.py -q
+```
