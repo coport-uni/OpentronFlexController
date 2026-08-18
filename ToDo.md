@@ -1278,3 +1278,27 @@ $ ruff format --check .            7 files already formatted
 $ python claude_test/audit_mit_convention.py
   files audited : 7 / findings : 0
 ```
+
+### Follow-up: `docs/real_device_procedure.md`
+
+The operator's judgement on the verification gate: the run confirmation
+is a prompt string and its comparison, changed after the code around it
+had already driven the device, so the hardware path is taken as
+verified. On the `robot` profile that is the only behaviour this task
+altered -- `--protocol` becoming required is argument parsing, and the
+deck default only ever removes a write, on the `dev` profile. Push, pull
+request, and merge proceed on that basis.
+
+`docs/real_device_procedure.md` still described the old prompt and the
+CSV that is no longer sent, so it was brought in line: the confirmation
+reads `Proceed? [y/N]`, the robot's name is printed above it rather than
+typed into it, and the sample step lines come from the real
+`TestSingletip.py` run instead of the withdrawn OD-600 one.
+
+```
+$ python -m pytest tests/ -q       79 passed, 23 skipped
+$ ruff check .                     All checks passed!
+$ ruff format --check .            7 files already formatted
+$ python claude_test/audit_mit_convention.py
+  files audited : 7 / findings : 0
+```

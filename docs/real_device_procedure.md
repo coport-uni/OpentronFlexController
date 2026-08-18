@@ -11,15 +11,14 @@ The procedure for stage S5, where the machine actually moves.
 
 ## Before you start
 
-The three things you supply are the robot's address, a protocol, and a
-CSV. Everything else has a safe default.
+The two things you supply are the robot's address and a protocol. Everything
+else has a safe default, and no data file is sent unless you name one.
 
 ```bash
 conda activate opentrons-flex
 
 python main.py --profile robot --host 192.168.1.50 \
-  --protocol my_protocol.py \
-  --csv my_data.csv
+  --protocol my_protocol.py
 ```
 
 ### What the `robot` profile does differently
@@ -28,7 +27,7 @@ python main.py --profile robot --host 192.168.1.50 \
 |---|---|---|
 | Host | `localhost` | `--host`, required |
 | Deck configuration | reference layout is **written** | **read only** |
-| Before the run | starts immediately | you must type the robot's name |
+| Before the run | starts immediately | you must answer `y` at a prompt |
 
 Two of those matter enough to explain.
 
@@ -71,7 +70,7 @@ Also confirm before anything else:
 ```bash
 python main.py --profile robot --host 192.168.1.50 \
   --expect-name flex-lab-01 \
-  --protocol my_protocol.py --csv my_data.csv \
+  --protocol my_protocol.py \
   --verify-only
 ```
 
@@ -97,7 +96,7 @@ planned steps, and **stops**. The robot does not move.
 ```bash
 python main.py --profile robot --host 192.168.1.50 \
   --expect-name flex-lab-01 \
-  --protocol my_protocol.py --csv my_data.csv \
+  --protocol my_protocol.py \
   --verify-only \
   --artifact-dir runs/tc12
 ```
@@ -119,7 +118,7 @@ mistake costs nothing. To walk them one at a time, add `--step`.
 ```bash
 python main.py --profile robot --host 192.168.1.50 \
   --expect-name flex-lab-01 \
-  --protocol my_protocol.py --csv my_data.csv \
+  --protocol my_protocol.py \
   --artifact-dir runs/tc13
 ```
 
@@ -128,24 +127,27 @@ The confirmation appears before anything moves:
 ```
   robot                    flex-lab-01 at 192.168.1.50
   protocol                 my_protocol.py
-  csv                      my_data.csv
+  csv                      none
   planned commands         41
   deck                     left as the robot has it
 
   The deck will move. Stand clear and keep the e-stop within reach.
-  Typing the robot's name confirms you mean this machine, not another.
+  The robot named above is the one that will move -- check it is the one
+  you mean.
 
-  Type 'flex-lab-01' to proceed:
+  Proceed? [y/N]:
 ```
 
-Anything other than the exact name declines and exits 2.
+Anything other than `y` or `yes` declines and exits 2. The robot's name
+is printed above the prompt rather than typed into it, so reading it is
+the step that catches the wrong machine.
 
 Then each command prints as the robot completes it:
 
 ```
-    17  OK    pick up tip from Tiprack 1[H12]
-    18  OK    aspirate 90.0 uL at Diluent Reservoir[A1]
-    19  RUN   dispense 90.0 uL at Normalization Plate[A1]
+    15  OK    pick up tip from opentrons_flex_96_filtertiprack_200ul[A1]
+    16  OK    aspirate 100.0 uL at opentrons_24_tuberack_eppendorf[A1]
+    17  RUN   dispense 100.0 uL at corning_96_wellplate_360ul_flat[A1]
 ```
 
 Record, per spec §9 stage S5:
@@ -217,7 +219,7 @@ retuned from `FlexController(...)` without touching the logic.
 | `--host <ip>` | Required. No default exists, deliberately |
 | `--expect-name <name>` | Strongly recommended. Wrong robot then stops the run |
 | `--protocol <file>` | Your protocol |
-| `--csv <file>` | Your data. `--csv ""` if the protocol takes none |
+| `--csv <file>` | Your data, only if the protocol declares a file parameter |
 | `--verify-only` | TC-12. Nothing moves |
 | `--step` | Walk the plan by hand before committing to it |
 | `--deck <file>` | **Only** if the file describes the deck in front of you |
