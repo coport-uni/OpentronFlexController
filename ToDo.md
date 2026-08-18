@@ -1258,3 +1258,23 @@ rather than guessed at.
 the OD-600 protocol as the project's reference. Both are governing
 documents rather than instructions to a reader, so they are left for the
 operator to amend deliberately.
+
+### Follow-up: `claude_test/README.md`
+
+`claude_test/README.md` is the index for that directory, and it had not
+been updated when `audit_mit_convention.py` gained `collect` and `write`
+in Task 12. It now records why the vocabulary was widened rather than the
+functions renamed -- the auditor's own comment says a `naming-verb`
+finding is "reported for a human to judge", so widening is the fix when
+the reported word really is a verb -- and carries a dated table of what
+has been added.
+
+Documentation only; no code changed.
+
+```
+$ python -m pytest tests/ -q       79 passed, 23 skipped
+$ ruff check .                     All checks passed!
+$ ruff format --check .            7 files already formatted
+$ python claude_test/audit_mit_convention.py
+  files audited : 7 / findings : 0
+```
