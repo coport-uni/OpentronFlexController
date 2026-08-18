@@ -113,7 +113,7 @@ cannot produce one, the robot refuses, and nothing moves.
 
 ### A protocol is just a Python file
 
-Here is what [`protocols/hello_flex.py`](protocols/hello_flex.py) does, with
+Here is what [`protocols/HelloFlex.py`](protocols/HelloFlex.py) does, with
 its imports, docstring, and labels trimmed away so the shape is visible:
 
 ```python
@@ -241,7 +241,7 @@ activation altogether:
 |---|---|
 | `python=3.12` | `CLAUDE.md` gives 3.10 as the floor; pinned so builds match |
 | `requests` | The tool's **only** runtime dependency |
-| `pytest` | To run the 84 tests |
+| `pytest` | To run the 102 tests |
 | `ruff` | Lint and format, at the 80-column limit this project uses |
 
 `pytest` and `ruff` are development tools, but the README asks you to run
@@ -319,7 +319,8 @@ You will see seven stages:
 ### Step 5 — go one step at a time
 
 ```bash
-python main.py --profile dev --verify-only --step
+python main.py --profile dev --verify-only --step \
+  --protocol protocols/HelloFlex.py
 ```
 
 Press Enter to advance through the plan, `q` to stop.
@@ -328,48 +329,59 @@ Press Enter to advance through the plan, `q` to stop.
 
 ## 4. Reading the output
 
-Stage 6 is the interesting one:
+Stage 6 is the interesting one. This is a real run of
+`protocols/TestSingletip.py` on `BionicsDEMO1`, reconstructed from the
+records it left in `artifacts/`:
 
 ```
      1  OK    home the gantry
-     5  OK    load labware Culture Plate at temperatureModuleV2
-    10  OK    load pipette p1000_96 on left
-    11  OK    configure nozzles to SINGLE, starting A1
-    17  OK    pick up tip from Tiprack 1[H12]
-    18  OK    aspirate 90.0 uL at Diluent Reservoir[A1]
-    19  OK    dispense 90.0 uL at Normalization Plate[A1]
-    24  OK    move to 96ChannelWasteChute
-    25  OK    drop tip
+     3  OK    load module magneticBlockV1 at slot C1
+     5  OK    load labware thermo_fisher_nunclon_sphera_96_well_u_bottom_174925 at heaterShakerModuleV1
+    12  OK    load pipette p1000_single_flex on left
+    14  OK    comment: Step 1: Transferring 100 uL from EP tube C2 A1 to D2 A1.
+    15  OK    pick up tip from opentrons_flex_96_filtertiprack_200ul[A1]
+    16  OK    aspirate 100.0 uL at opentrons_24_tuberack_eppendorf_1.5ml_safelock_snapcap[A1]
+    17  OK    dispense 100.0 uL at corning_96_wellplate_360ul_flat[A1]
+    18  OK    move to 1ChannelWasteChute
+    19  OK    drop tip
 
-  run succeeded after 0.6s
+  run succeeded after 88.9s
 ```
 
 | Column | Meaning |
 |---|---|
 | `17` | Step number, counting from 1 |
 | `OK` | Finished. `RUN` = in progress, `FAIL` = failed, blank = not started |
-| `pick up tip from Tiprack 1[H12]` | What happened, in the names *your protocol chose* |
+| `dispense 100.0 uL at corning_96_wellplate_360ul_flat[A1]` | What happened, in the names *your protocol chose* |
 
 Two things worth noticing, because they show the display is reporting
 reality rather than guessing:
 
-- **`Tiprack 1[H12]`** — tips come off in reverse order, because the
-  protocol says `tiprack.wells()[::-1]`
-- **`90.0 uL`** — that number comes from row 1 of the CSV, not from the code
+- **`1ChannelWasteChute`** — the robot names the chute by the pipette
+  that reached it. Run the same protocol with an 8-channel pipette and
+  the name changes, because the addressable area does.
+- **`p1000_single_flex`** — the protocol asked for `flex_1channel_1000`.
+  What prints is what the robot reports it actually loaded.
 
-### Where the numbers come from
+### Where the names come from
+
+The console builds its name map from the **run**, not from the analysis,
+and rebuilds it on every tick:
 
 ```
-  data/od_normalization.csv                    what the robot does
-  ┌──────────────────────────────────┐
-  │ source,destination,diluent,dna   │
-  │ A1,A1,90,10  ────────────────────┼──▶  aspirate 90 µL → dispense to A1
-  │ A2,A2,80,20  ────────────────────┼──▶  aspirate 80 µL → dispense to A2
-  │ B1,B1,70,30  ────────────────────┼──▶  aspirate 70 µL → dispense to B1
-  └──────────────────────────────────┘
+   the analysis                    the run
+  ┌────────────────────┐          ┌────────────────────┐
+  │ labwareId: 4f0c... │          │ labwareId: a917... │
+  │ "tiprack_200ul"    │          │ "tiprack_200ul"    │
+  └────────────────────┘          └────────────────────┘
+        planned                        executing
+             └──── different ids for the same labware ────┘
 ```
 
-Change the CSV, and the steps change. No code edit needed.
+A run assigns its own identifiers, so a map built from the analysis
+resolves nothing once the robot is moving. The run also lists a labware
+only after it has been loaded, which is why the first steps of a run can
+print a well without its labware name and later ones do not.
 
 ---
 
@@ -460,7 +472,7 @@ logic*. It says nothing about *physical outcomes*.
 
 ```
 $ python -m pytest tests/ -q
-84 passed
+79 passed, 23 skipped
 
 $ ruff check . && ruff format --check .
 All checks passed!
@@ -500,7 +512,7 @@ python main.py [options]
 | `--profile robot --host <ip>` | Target a real device. **Asks before moving** |
 | `--verify-only` | Stop after the check. Nothing moves |
 | `--step` | Walk the plan, one Enter per step |
-| `--protocol <file>` | Your `.py`. Defaults to the reference protocol |
+| `--protocol <file>` | Your `.py`. **Required** — there is no default |
 | `--csv <file>` | Data file, only for a protocol that declares one. Nothing is sent without it |
 | `--deck <file>` | Deck fixture list. `--deck ""` to leave the deck alone |
 | `--labware <path>` | Custom labware definition, or a folder of them. Repeatable |
@@ -512,88 +524,85 @@ Exit status: `0` success · `1` failure · `2` operator declined.
 
 ### Worked examples
 
-Every command here was run in the conda environment above, against the
-development server, before being written down. Exit status follows each one.
+The `dev` commands here were run in the conda environment above, against
+the development server. The `robot` commands were run on a real Flex,
+with the operator present. Exit status follows each one.
 
-**Check the reference protocol without moving anything** — the safest thing
-you can run, and the one to reach for first.
+**`--protocol` is required.** There is no default: which protocol runs is
+the one decision that has to be made deliberately, and the console will
+not guess.
+
+**Check a protocol without moving anything** — the safest thing you can
+run, and the one to reach for first.
 
 ```bash
-python main.py --profile dev --verify-only --no-plan          # exit 0
+python main.py --profile dev --verify-only --no-plan \
+  --protocol protocols/HelloFlex.py                           # exit 0
 ```
 
 **Run it.**
 
 ```bash
-python main.py --profile dev --no-plan                        # exit 0
-```
-
-**Use your own protocol.** `--deck ""` says leave the deck configuration
-alone. The `--csv ""` below is how these runs were recorded; the flag can
-now be omitted entirely.
-
-```bash
-python main.py --profile dev --verify-only --no-plan \
-  --protocol protocols/hello_flex.py --csv "" --deck ""       # exit 0
-
 python main.py --profile dev --no-plan \
-  --protocol protocols/hello_flex.py --csv "" --deck ""       # exit 0
+  --protocol protocols/HelloFlex.py                           # exit 0
 ```
 
-**Feed it more data.** The 96-row CSV is the one that exhausts the first tip
-rack, so it is the only input that exercises the gripper.
+**Send custom labware with it.** Definitions the Opentrons desktop
+application holds in its own store have to travel with the protocol over
+HTTP. Point `--labware` at a folder and every `*.json` in it goes up.
 
 ```bash
-python main.py --profile dev --verify-only --no-plan \
-  --csv data/od_normalization_96.csv                          # exit 0
+python main.py --profile robot --host FLXA3020260521001.local \
+  --expect-name BionicsDEMO1 --verify-only --no-plan \
+  --protocol protocols/TestSingletip.py --params "{}" \
+  --deck configs/deck_testsingletip.json \
+  --labware protocols/labware                                 # exit 0
 ```
 
 **Watch a bad protocol get refused.** Note the exit status.
 
 ```bash
 python main.py --profile dev --verify-only --no-plan \
-  --protocol tests/protocols/bad_labware.py --csv ""          # exit 1
+  --protocol tests/protocols/bad_labware.py                   # exit 1
 ```
 
 **Step through the plan by hand** — Enter to advance, `q` to stop.
 
 ```bash
-python main.py --profile dev --verify-only --step
+python main.py --profile dev --verify-only --step \
+  --protocol protocols/HelloFlex.py
 ```
 
 **Batch mode**, when you want a JSON verdict instead of a live display.
 
 ```bash
-python flex_controller.py --profile dev --verify-only \
-  --protocol protocols/OD_Normalization.py \
-  --csv data/od_normalization.csv \
-  --deck configs/deck_od_normalization.json \
-  --params '{"dry_run": true, "waste_type": 1}'               # exit 0
+python flex_controller.py --profile robot \
+  --host FLXA3020260521001.local --verify-only \
+  --protocol protocols/Test8tips.py --params "{}" \
+  --deck configs/deck_testsingletip.json \
+  --labware protocols/labware                                 # exit 0
 ```
 
 ```json
 {
   "passed": true,
-  "protocol_id": "dab22382-3b4e-45dc-b946-5866eaa727cb",
-  "analysis_id": "d19fd418-b68f-472c-9834-cb62668304cb",
+  "protocol_id": "7d2e849d-3068-42ce-bba0-f4db88fa5468",
+  "analysis_id": "98fd7d6d-6f6a-4ce0-bfe3-ae7112af9fbf",
   "errors": [],
-  "command_count": 41
+  "command_count": 77
 }
-```
-
-**See all six faults being caught.**
-
-```bash
-python claude_test/show_error_detection.py                    # exit 0
 ```
 
 **Everything the project checks about itself.**
 
 ```bash
-python -m pytest tests/ -q                    # 84 passed
+python -m pytest tests/ -q                    # 79 passed, 23 skipped
 ruff check . && ruff format --check .         # All checks passed!
 python claude_test/audit_mit_convention.py    # findings : 0
 ```
+
+The 23 skips are the development-server integration module, which stands
+down when nothing is listening on `localhost:31950`.
 
 **Full option list.**
 
@@ -619,9 +628,9 @@ Drop `--verify-only` when the dry run looks right.
 
 #### A worked example, run on real hardware
 
-This is the exact command used against `BionicsDEMO1` on 2026-08-18, with
-the operator present. `protocols/TestSingletip.py` moves 100 µL from an
-EP tube and 100 µL from a reservoir into the same plate well.
+`protocols/TestSingletip.py` moves 100 µL from an EP tube and 100 µL from
+a reservoir into the same plate well. This is what was run against
+`BionicsDEMO1` on 2026-08-18, with the operator present:
 
 ```bash
 conda activate opentrons-flex
@@ -629,11 +638,14 @@ conda activate opentrons-flex
 python main.py --profile robot --host FLXA3020260521001.local \
   --expect-name BionicsDEMO1 \
   --protocol protocols/TestSingletip.py \
-  --csv "" --params "{}" \
   --deck configs/deck_testsingletip.json \
   --labware protocols/labware \
   --verify-only --no-plan                                     # exit 0
 ```
+
+That day the command also carried `--csv "" --params "{}"`, because the
+console still defaulted both to a reference protocol's values. It no
+longer does, so neither flag is needed.
 
 ```
 3. Upload
@@ -666,16 +678,16 @@ protocol never loads is harmless.
 **No data file is sent unless `--csv` names one.** A protocol needs a CSV
 only if it declares one with `parameters.add_csv_file`; a protocol with no
 `add_parameters` at all reports `runTimeParameters: []`, and the desktop
-application does not ask for a CSV either. The `--csv ""` in the command
-above is what was run on the day, when the console still defaulted to the
-reference protocol's CSV; it is no longer needed -- and dropping it also
+application does not ask for a CSV either. Leaving the flag off also
 avoids Windows PowerShell, which swallows an empty argument and leaves
-argparse complaining that `--csv` expects one.
+argparse complaining that `--csv` expects one — so `--csv ""` is a shape
+worth not needing.
 
-**`--params "{}"` is required for a protocol with no parameters.**
-Without it, `main.py` falls back to the reference protocol's
-`{"dry_run": true, "waste_type": 1}`, which a protocol that never
-declared them rejects.
+**`--params` is only for a protocol that declares scalar parameters.**
+Omitted, nothing is sent, which is what a protocol with no
+`add_parameters` wants. `Test8tips.py` declares `start_tip_column` and
+`demo_mode`; omitting `--params` runs it on their declared defaults, and
+`--params '{"start_tip_column": 1}'` overrides one of them.
 
 **The deck file belongs to one machine.** Module fixtures carry
 `opentronsModuleSerialNumber`, and the robot answers `422
@@ -701,33 +713,42 @@ waste chute at D3; if yours are not installed, do not send it — pass
 > first.** It covers the physical checks no software can make, the
 > dry-run-then-run order, and how to stop a run.
 
-Three things differ from `dev`, and two of them are safety decisions:
+Two things differ from `dev`, and both are safety decisions:
 
 | | `dev` | `robot` |
 |---|---|---|
-| Deck configuration | reference layout is **written** | **read only** unless you pass `--deck` |
-| Before the run | starts immediately | you type the robot's **name**, not "yes" |
+| Before the run | starts immediately | you answer `y` at a prompt |
 | Pre-flight | informational | wrong robot or unreachable robot **blocks** |
 
-The deck is not written because doing so asserts which fixtures are
-physically bolted on. Claim a waste chute that is not there and the
-analysis will not object ([D-1](docs/spec_deviations.md#d-1)) — the run
-fails mid-motion instead.
+The deck behaves the same on both: an omitted `--deck` reads the
+configuration and writes nothing. Writing one asserts which fixtures are
+physically bolted on, and claiming a waste chute that is not there is how
+a run drives into thin air — the analysis will not object
+([D-1](docs/spec_deviations.md#d-1)), so the run fails mid-motion
+instead. This console cannot see your bench, so it never guesses.
 
-The prompt asks for the robot's name because muscle memory types "yes",
-and it cannot type the name of a machine you have not looked at.
+The confirmation prints the robot's name and asks `Proceed? [y/N]`.
+Anything other than `y` or `yes` declines and exits 2. Read the name
+before you answer — it is the machine that is about to move, and one
+keystroke is all that stands between the prompt and the deck.
 
-**Verified on hardware.** On 2026-08-18 `protocols/TestSingletip.py` ran
-on `BionicsDEMO1` (serial `FLXA3020260521001`, system `v9.1.1`) with the
-operator present: 27 commands, all `succeeded`, zero errors, 86 seconds.
-The records are in `artifacts/`.
+**Verified on hardware.** On 2026-08-18, on `BionicsDEMO1` (serial
+`FLXA3020260521001`, system `v9.1.1`), with the operator present:
 
-Two things about that run are worth stating plainly. The **upload** did
-not go through `main.py` — at the time, `upload_protocol` could send only
-one file, so a separate harness carried the custom labware definition;
-`--labware` is what closed that gap afterwards. And while the `--labware`
-path above has been verified through the analysis gate on the same
-device, **the tool has not yet driven a full run with it**.
+| Protocol | What was verified |
+|---|---|
+| `TestSingletip.py` | A full run through `main.py`: 27 commands, all `succeeded`, 0 errors, 89 s (run `197ac9ae`) |
+| `Test8tips.py` | The analysis gate: `result ok`, 77 planned commands, 0 errors |
+
+The records are in `artifacts/`, which is gitignored. Note that
+`analysis.json`, `run.json`, and `commands.json` are fixed names and are
+**overwritten by every run** — pass `--artifact-dir` if you want to keep
+more than the last one. The robot's own log files are not collected by
+this tool at all.
+
+One caveat on the confirmation prompt and the deck default described just
+above: both changed **after** those runs, and neither has been exercised
+on the device since.
 
 ### The two profiles
 
@@ -744,14 +765,19 @@ anywhere in the code — by design, so the tested path is the shipped path.
 ```python
 from flex_controller import FlexController
 
-controller = FlexController(profile="dev")
+controller = FlexController(
+    host="FLXA3020260521001.local", profile="robot"
+)
 final = controller.execute(
-    "protocols/OD_Normalization.py",
-    csv_path="data/od_normalization.csv",
-    parameter_values={"dry_run": True, "waste_type": 1},
+    "protocols/TestSingletip.py",
+    labware_paths=["protocols/labware"],
 )
 print(final["status"])       # "succeeded"
 ```
+
+`labware_paths` takes definition files, directories of them, or both.
+Pass `csv_path=` only for a protocol that declares a file parameter, and
+`parameter_values=` only for one that declares scalar parameters.
 
 `execute` refuses to create a run if the analysis reported any error.
 There is no way to switch that off.
@@ -765,11 +791,12 @@ There is no way to switch that off.
 | `environment.yml` | The conda environment: Python, `requests`, `pytest`, `ruff` |
 | `main.py` | The console you will use — info, check, upload, watch |
 | `flex_controller.py` | The library. One class, `FlexController`, plus a batch CLI |
-| `protocols/hello_flex.py` | A small example protocol, 34 lines |
-| `protocols/OD_Normalization.py` | The real reference protocol, vendored unchanged |
-| `data/` | CSVs: 3-row, 96-row, and the official 103-row file |
-| `configs/` | The twelve deck fixtures |
-| `tests/` | 84 tests, plus three deliberately broken protocols |
+| `protocols/HelloFlex.py` | A small example protocol, 34 lines |
+| `protocols/TestSingletip.py` | One-channel transfer, verified on the real device |
+| `protocols/Test8tips.py` | Eight-channel cell seeding, verified through analysis |
+| `protocols/labware/` | Custom labware definitions, for `--labware` |
+| `configs/` | Deck fixture lists, one per bench layout |
+| `tests/` | 102 tests, plus three deliberately broken protocols |
 | `claude_test/` | Diagnostics, not part of CI |
 | `docs/` | The specification and the reports below |
 
@@ -792,16 +819,21 @@ There is no way to switch that off.
 |---|---|---|
 | [coport-uni/CommonClaude](https://github.com/coport-uni/CommonClaude) | Conventions and five Claude Code hooks | Submodule at `external/CommonClaude` |
 | [Opentrons/opentrons](https://github.com/Opentrons/opentrons) `969d95a` | The `robot-server` simulator | Cloned, not vendored |
-| [Opentrons Protocol Library](https://library.opentrons.com/p/od-normalization-with-96-ch-pipette) | The reference protocol and its official CSV | Vendored byte-exact |
+| [Opentrons Protocol Library](https://library.opentrons.com/p/od-normalization-with-96-ch-pipette) | The OD-600 reference protocol, used to build this tool | Withdrawn — see below |
 
 One upstream fix was needed: CommonClaude's lint hook resolved its
 configuration from whatever directory it inherited, so it failed on every
 Python write. It now runs from the project root.
 
-The protocol was not in Opentrons' source repository and its library page
-renders client-side, so it was fetched from the GraphQL API behind that
-page. Details, including the query:
-[`docs/upstream_references.md`](docs/upstream_references.md).
+The OD-600 normalization protocol was this project's reference while the
+tool was being built, and the reports in `docs/` describe runs made
+against it. That line of work is not being continued, so the protocol,
+its CSVs, and its deck configuration have been removed. How it was
+obtained — it was not in Opentrons' source repository, and its library
+page renders client-side, so it came from the GraphQL API behind that
+page — is recorded in
+[`docs/upstream_references.md`](docs/upstream_references.md), along with
+the query.
 
 ---
 
@@ -810,7 +842,7 @@ page. Details, including the query:
 With the `opentrons-flex` environment active:
 
 ```bash
-python -m pytest tests/ -v                    # 84 tests
+python -m pytest tests/ -q                    # 79 passed, 23 skipped
 ruff check . && ruff format --check .
 python claude_test/audit_mit_convention.py
 ```
@@ -822,3 +854,11 @@ that file on its own — it should report 23 passed, not 23 skipped:
 ```bash
 python -m pytest tests/test_integration_dev_server.py -q
 ```
+
+> ⚠️ That module and `claude_test/show_error_detection.py` still name the
+> withdrawn OD-600 protocol, its CSVs, and its deck configuration, so they
+> will not run until they are pointed at a surviving protocol. That is not
+> a rename: the OD-600 protocol was the only one here exercising a
+> file-type runtime parameter, the 96-channel pipette, the gripper, and a
+> staging slot, and choosing what replaces that coverage needs a
+> development server to verify against.

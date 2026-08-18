@@ -1031,3 +1031,230 @@ says so in the same words.
 Still blocked on `gh auth login`, so Task 11 and Task 12 have no GitHub
 issue and no pull request. The branch `feature/custom-labware-upload`
 stays local until that is done.
+
+---
+
+## Task 13: Stop the console from sending a CSV by default
+
+Requested: the real-device command reported a CSV error; stop using a
+CSV at all. Issue #13.
+
+### Cause
+
+`main.py` defaulted `--csv` to `data/od_normalization.csv`, the
+reference protocol's data file, so every other protocol had to switch it
+off with an empty argument. Both ways out failed:
+
+```
+PS> python main.py ... --csv "" --params "{}"
+main.py: error: argument --csv: expected one argument
+   # PowerShell 5.1 drops the empty argument before argparse sees it
+
+$ python main.py ...            # flag omitted
+FileNotFoundError: data/od_normalization.csv
+   # the reference protocol's data was deleted from the working tree
+```
+
+`protocols/TestSingletip.py` declares no runtime parameters at all, so
+no data file was ever wanted.
+
+### Change
+
+- [x] `main.py`: `--csv` defaults to nothing; a data file is uploaded
+      only when the operator names one. The flag stays for a protocol
+      that declares one with `parameters.add_csv_file`
+- [x] `main.py` docstring: the real-device example drops `--csv`
+- [x] `tests/test_main_console.py`: cover the new default
+- [x] `README.md` and `docs/real_device_procedure.md`: remove the CSV
+      from the commands an operator is told to type, and correct the
+      guidance that called an empty `--csv` necessary
+- [x] `flex_controller.py` left untouched -- spec section 5.1 still
+      requires a file-type parameter to be uploaded before the protocol,
+      and its own CLI keeps `--csv` / `--csv-variable`
+
+### Verification
+
+Dry run on `BionicsDEMO1` from PowerShell, the shell that was failing,
+with the operator present. Nothing moved.
+
+```
+PS> python main.py --profile robot --host 169.254.108.46 `
+      --expect-name BionicsDEMO1 `
+      --protocol protocols/TestSingletip.py `
+      --labware protocols/labware `
+      --params "{}" --verify-only --no-plan
+EXIT=0
+
+0. Pre-flight
+  OK    reachable            http://169.254.108.46:31950
+  OK    robot name           BionicsDEMO1
+  OK    robot software       v9.1.1
+
+3. Upload
+  custom labware           corning_3590_96_wellplate_360ul_flat.json
+  custom labware           costar_7007_96_wellplate_330ul_u_bottom.json
+  custom labware           spl_96_well_cell_culture_plate_330ul_flat_bottom (1).json
+  custom labware           thermo_fisher_nunclon_sphera_96_well_u_bottom_174925 (1) (1).json
+  protocol                 TestSingletip.py
+
+4. Analysis
+  status                   completed
+  result                   ok
+  planned commands         27
+  errors                   0
+  Gate passed: the robot accepted this protocol.
+
+Done: verified, nothing was run
+```
+
+```
+$ ruff check .                 All checks passed!
+$ ruff format --check .        7 files already formatted
+$ python -m pytest tests/ -q   78 passed, 23 skipped in 4.84s
+```
+
+The run was `--verify-only`, so the full run through this path is still
+unproven, exactly as Task 12 records.
+
+### Note on tracking
+
+`gh auth login` is done on this host, contrary to the Task 11 and Task
+12 entries above: `gh auth status` reports account `coport-uni`, and
+issues #10 through #13 were opened from here. #10 duplicated #12 and was
+closed as such.
+
+Still open, and deliberately untouched: `main.py` also defaults
+`--params` to the reference protocol's `{"dry_run": true,
+"waste_type": 1}` and `--protocol` to the deleted
+`protocols/OD_Normalization.py`. That is the same defect class as this
+CSV one, and it is why `--params "{}"` is still mandatory in every
+command above.
+
+---
+
+## Task 13: Retire the reference protocol, and make the operator choose
+
+Requested: the OD-600 normalization material is no longer wanted, the
+protocol is something the operator must look at rather than inherit from
+a default, the run confirmation should be `y`/`n` rather than the robot's
+name, and the GitHub documentation should reflect everything verified so
+far.
+
+### Scope
+
+- [x] Delete the OD-600 material: `protocols/OD_Normalization.py`,
+      `data/od_normalization*.csv`, `configs/deck_od_normalization.json`.
+      They are already gone from the working tree; this stages the
+      removal and clears what still points at them.
+- [x] `main.py`: `--protocol` becomes **required**, with no default. Drop
+      `default_protocol`, `reference_deck`, `default_parameters`, and the
+      dev-profile deck write that depended on the reference layout.
+- [x] `main.py` and `flex_controller.py`: the pre-run confirmation takes
+      `y`/`n` instead of the robot's name or the word `yes`. Both entry
+      points behave the same way.
+- [x] Update the tests that assert the retired defaults and the prompt.
+- [x] `README.md` and `docs/`: remove the OD material from anything that
+      tells a reader what to do now, and record what the device runs have
+      established.
+- [x] `ruff check` / `ruff format --check` clean; `pytest` green.
+- [ ] Verify both protocols on the device through `--verify-only`.
+
+### A concern, stated once and then set aside
+
+The name-typing prompt was a deliberate choice, and `README.md` gives the
+reasoning: muscle memory types `yes`, and it cannot type the name of a
+machine the operator has not looked at. Moving to `y`/`n` makes the gate
+one keystroke, which is exactly what that design was avoiding.
+
+Spec section 4.4 requires only that the `robot` profile ask for a
+confirmation, not what shape it takes, so `y`/`n` is within the spec. The
+operator has asked for it and owns the bench. It is being done, with the
+robot's name still printed above the prompt so the machine is still
+named, just not typed.
+
+### Historical records are not rewritten
+
+`docs/verification_report.md`, `docs/code_quality_audit.md`,
+`docs/spec_deviations.md`, and the completed entries in `ToDo.md` and
+`LearnedPatterns.md` describe runs that actually happened against the
+OD-600 protocol. Deleting the protocol does not make those runs untrue,
+and editing them to pretend otherwise would be a defect. They keep their
+OD references. Only material that instructs a reader what to run **now**
+is changed.
+
+### Verification
+
+Software checks, in the conda environment:
+
+```
+$ python -m pytest tests/ -q
+79 passed, 23 skipped in 4.34s
+
+$ ruff check .                     All checks passed!
+$ ruff format --check .            7 files already formatted
+$ python claude_test/audit_mit_convention.py
+  files audited : 7 / findings : 0
+
+$ python main.py --profile dev
+main.py: error: the following arguments are required: --protocol
+```
+
+The last line is the point of the task: a bare command no longer uploads
+anything.
+
+The `README.md` stage-6 sample was rebuilt from the records of the real
+run in `artifacts/`, rather than kept as prose about a protocol that no
+longer exists. Doing that surfaced why the console builds its name map
+from the run and not the analysis -- a run assigns fresh identifiers to
+the same labware -- and that reasoning is now in the README instead of
+only in a docstring.
+
+### NOT VERIFIED on the device
+
+The robot was disconnected before this task's changes could be exercised
+on it:
+
+```
+$ Test-NetConnection FLXA3020260521001.local -Port 31950
+TcpTestSucceeded : False
+```
+
+Per section 5.1 rule 2 the branch stays local: **not pushed, no pull
+request, not merged.** Three changes here reach a real device and none
+has been run against one --
+
+1. the `y`/`n` confirmation, which is the gate before motion,
+2. `--protocol` being required, on the `robot` profile,
+3. an omitted `--deck` now writing nothing on **either** profile, where
+   the `dev` profile used to write the reference layout.
+
+Item 3 only ever removes a write, so it cannot assert a fixture that is
+not there; that is the direction section 5.1 worries about, not the
+other. It still has not been run.
+
+When the robot is back, `--verify-only` on `protocols/TestSingletip.py`
+and `protocols/Test8tips.py` closes this, and the run confirmation needs
+one deliberate `n` to check that declining still exits 2.
+
+### Open
+
+Two files still name the deleted OD-600 material:
+
+- `tests/test_integration_dev_server.py` -- `protocol_path`, `deck_path`,
+  `small_csv`, `full_csv`.
+- `claude_test/show_error_detection.py` -- the deck configuration, the
+  protocol, and the CSV.
+
+Both talk to a **development server**, and there is none on this Windows
+host, so re-pointing them at a surviving protocol could not be verified
+here. Repointing blind would also lose real coverage: the OD-600
+protocol was the only one exercising a file-type runtime parameter, the
+96-channel pipette, the gripper, and a staging slot, and neither
+`TestSingletip.py` nor `Test8tips.py` uses any of those. Choosing what
+replaces that coverage is a decision, not a rename, and it is left open
+rather than guessed at.
+
+`CLAUDE.md` and `docs/flex_controller_spec_v0.3.md` also still describe
+the OD-600 protocol as the project's reference. Both are governing
+documents rather than instructions to a reader, so they are left for the
+operator to amend deliberately.

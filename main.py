@@ -68,24 +68,12 @@ from flex_controller import (
 
 repository_root = Path(__file__).parent
 
-default_protocol = repository_root / "protocols" / "OD_Normalization.py"
-reference_deck = repository_root / "configs" / "deck_od_normalization.json"
-default_parameters = {"dry_run": True, "waste_type": 1}
-
-# Writing a deck configuration tells the robot which fixtures are bolted
-# where. Asserting a waste chute that is not physically installed is how
-# a run drives into thin air, and spec section 7's analysis will not
-# object -- see docs/spec_deviations.md D-1. So the reference layout is
-# applied only on the profile it describes. On a real device the deck is
-# read and shown, and writing it takes an explicit --deck.
-deck_written_by_default = ("dev",)
-
 # The lowest robot software the checklist of spec section 10 accepts.
 minimum_robot_version = (7, 0, 0)
 
 # The console re-reads the command list on every tick, so one page must
-# be able to hold a whole run; the reference protocol plans 788 commands
-# for a 96-row CSV.
+# be able to hold a whole run. Two thousand covers a 96-row transfer,
+# which is the largest plan this tool has been shown.
 command_page_length = 2000
 
 # Fast enough to follow a simulated run, which finishes in a few
@@ -698,8 +686,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=default_port)
     parser.add_argument(
         "--protocol",
-        default=str(default_protocol),
-        help="protocol file; defaults to the reference protocol",
+        required=True,
+        help="protocol file to upload; there is no default, because "
+        "which protocol runs is the operator's decision",
     )
     parser.add_argument(
         "--csv",
@@ -775,17 +764,13 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = build_parser().parse_args(argv)
 
-    # An omitted --deck means "whatever is safe for this profile". Only
-    # the dev profile gets a layout written for it; a real robot's deck
-    # describes hardware that is either bolted on or is not, and this
-    # console cannot see which.
-    deck_source = args.deck
-    if deck_source is None:
-        deck_source = (
-            str(reference_deck)
-            if args.profile in deck_written_by_default
-            else ""
-        )
+    # An omitted --deck means "read the deck, do not write it". A deck
+    # configuration asserts which fixtures are physically bolted on, and
+    # claiming a waste chute that is not there is how a run drives into
+    # thin air -- the analysis will not object, see
+    # docs/spec_deviations.md D-1. This console cannot see the bench, so
+    # it never guesses.
+    deck_source = args.deck or ""
 
     fixtures: list[dict] = []
     if deck_source:
@@ -794,9 +779,7 @@ def main(argv: list[str] | None = None) -> int:
             loaded = loaded.get("data", loaded).get("cutoutFixtures", [])
         fixtures = loaded
 
-    parameters = (
-        json.loads(args.params) if args.params else dict(default_parameters)
-    )
+    parameters = json.loads(args.params) if args.params else {}
 
     controller = FlexController(
         host=args.host,
@@ -871,11 +854,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(
                 "\n  The deck will move. Stand clear and keep the e-stop "
-                "within reach.\n  Typing the robot's name confirms you mean "
-                "this machine, not another.\n"
+                "within reach.\n  The robot named above is the one that "
+                "will move -- check it is the one you mean.\n"
             )
-            answer = input(f"  Type {robot_name!r} to proceed: ")
-            if answer.strip() != robot_name:
+            answer = input("  Proceed? [y/N]: ")
+            if answer.strip().lower() not in ("y", "yes"):
                 print("\nDeclined; nothing was run.")
                 return 2
 
