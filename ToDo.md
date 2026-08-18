@@ -488,3 +488,42 @@ appears mid-run, on a machine that is already moving.
 - **TC-12 and TC-13 remain unrun.** No Opentrons Flex exists here. Per
   CLAUDE.md §5.1 rule 2 this branch is pushed but **must not be merged**
   until they have been run with an operator present.
+
+---
+
+## Task 9: Merge the real-device path into main, unverified
+
+**Date**: 2026-08-13
+**Pull Request**: #9, merged as `344e8d4`
+**Issue #8**: deliberately left **open**
+
+### What was decided
+
+Merged at the repository owner's direction, against the letter of
+CLAUDE.md §5.1 rule 2, which keeps an unverified hardware path off
+`main`. Recorded here so it reads as a decision rather than an oversight.
+
+### Why merging was the lower risk
+
+`main` already carried the hazard this branch removes. Before the merge
+`--deck` defaulted to writing the reference deck layout, so anyone who
+pulled `main` and ran `--profile robot` would have overwritten a real
+robot's deck configuration on the first run — and per D-1 the analysis
+would not have objected. Withholding the fix kept that hazard on the
+default branch, where it was more likely to reach a machine than the fix
+was.
+
+Merging lowers the risk. It does **not** discharge the verification gate.
+
+### What is still true after the merge
+
+- [ ] TC-12 real device dry-run — **NOT RUN**
+- [ ] TC-13 real device full run — **NOT RUN**
+- [x] Issue #8 kept open until both pass
+- [x] The pull request banner rewritten to say the code was merged
+      unverified, and why
+- [x] `README.md` still states plainly that no hardware has run this
+- [x] Verification gate re-run before the merge: ruff clean, audit 0
+      findings, 95 tests passing
+
+**Nothing on `main` may be read as evidence about hardware.**

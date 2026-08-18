@@ -165,6 +165,21 @@ than rediscovered. Format and categories follow CLAUDE.md §10.
   the run that matters is the first one where it can see itself.
   (from ToDo#6)
 
+**Withholding a safety fix can be the more dangerous option**
+- **Problem**: A branch fixed a default that would have overwritten a real
+  robot's deck configuration, but CLAUDE.md §5.1 rule 2 keeps unverified
+  hardware paths off `main`, so the fix sat unmerged.
+- **Cause**: The rule is written to stop unverified code being *trusted*.
+  Applied literally it also stopped unverified code being *corrected*,
+  while the hazard it corrected stayed on the default branch.
+- **Fix**: Merged deliberately, with the pull request banner rewritten to
+  state the code is unverified on hardware and why it was merged anyway,
+  the tracking issue left open, and the README warning kept in place.
+- **Rule**: Always compare the risk of merging against the risk of the
+  branch that is already on `main`; a gate that protects the default
+  branch stops protecting it once the default branch is the worse of the
+  two. (from ToDo#9)
+
 ## §5. Environment Specifics
 
 **robot-server needs libsystemd headers before `make setup`**
